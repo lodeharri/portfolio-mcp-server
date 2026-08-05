@@ -52,8 +52,14 @@ class TestChunkHashContract:
     def test_compute_chunk_hash_is_deterministic(self) -> None:
         from mcp_server.domain.value_objects import compute_chunk_hash
 
-        a = compute_chunk_hash("p", "/tmp/foo.py", 0, "x = 1", 768)
-        b = compute_chunk_hash("p", "/tmp/foo.py", 0, "x = 1", 768)
+        a = compute_chunk_hash(
+            project_id="p", file_path="/tmp/foo.py", start_char=0,
+            content="x = 1", embedding_dim=768,
+        )
+        b = compute_chunk_hash(
+            project_id="p", file_path="/tmp/foo.py", start_char=0,
+            content="x = 1", embedding_dim=768,
+        )
         assert a == b
 
     def test_compute_chunk_hash_matches_sha256_of_canonical_tuple(self) -> None:
@@ -80,37 +86,67 @@ class TestChunkHashContract:
     def test_compute_chunk_hash_differs_when_project_id_differs(self) -> None:
         from mcp_server.domain.value_objects import compute_chunk_hash
 
-        a = compute_chunk_hash("p1", "/tmp/foo.py", 0, "x = 1", 768)
-        b = compute_chunk_hash("p2", "/tmp/foo.py", 0, "x = 1", 768)
+        a = compute_chunk_hash(
+            project_id="p1", file_path="/tmp/foo.py", start_char=0,
+            content="x = 1", embedding_dim=768,
+        )
+        b = compute_chunk_hash(
+            project_id="p2", file_path="/tmp/foo.py", start_char=0,
+            content="x = 1", embedding_dim=768,
+        )
         assert a != b
 
     def test_compute_chunk_hash_differs_when_file_path_differs(self) -> None:
         from mcp_server.domain.value_objects import compute_chunk_hash
 
-        a = compute_chunk_hash("p", "/tmp/foo.py", 0, "x = 1", 768)
-        b = compute_chunk_hash("p", "/tmp/bar.py", 0, "x = 1", 768)
+        a = compute_chunk_hash(
+            project_id="p", file_path="/tmp/foo.py", start_char=0,
+            content="x = 1", embedding_dim=768,
+        )
+        b = compute_chunk_hash(
+            project_id="p", file_path="/tmp/bar.py", start_char=0,
+            content="x = 1", embedding_dim=768,
+        )
         assert a != b
 
     def test_compute_chunk_hash_differs_when_start_char_differs(self) -> None:
         from mcp_server.domain.value_objects import compute_chunk_hash
 
-        a = compute_chunk_hash("p", "/tmp/foo.py", 0, "x = 1", 768)
-        b = compute_chunk_hash("p", "/tmp/foo.py", 1, "x = 1", 768)
+        a = compute_chunk_hash(
+            project_id="p", file_path="/tmp/foo.py", start_char=0,
+            content="x = 1", embedding_dim=768,
+        )
+        b = compute_chunk_hash(
+            project_id="p", file_path="/tmp/foo.py", start_char=1,
+            content="x = 1", embedding_dim=768,
+        )
         assert a != b
 
     def test_compute_chunk_hash_differs_when_content_differs(self) -> None:
         from mcp_server.domain.value_objects import compute_chunk_hash
 
-        a = compute_chunk_hash("p", "/tmp/foo.py", 0, "x = 1", 768)
-        b = compute_chunk_hash("p", "/tmp/foo.py", 0, "x = 2", 768)
+        a = compute_chunk_hash(
+            project_id="p", file_path="/tmp/foo.py", start_char=0,
+            content="x = 1", embedding_dim=768,
+        )
+        b = compute_chunk_hash(
+            project_id="p", file_path="/tmp/foo.py", start_char=0,
+            content="x = 2", embedding_dim=768,
+        )
         assert a != b
 
     def test_compute_chunk_hash_differs_when_embedding_dim_differs(self) -> None:
         """ADR-004 critical case: dim change MUST invalidate the hash."""
         from mcp_server.domain.value_objects import compute_chunk_hash
 
-        a = compute_chunk_hash("p", "/tmp/foo.py", 0, "x = 1", 768)
-        b = compute_chunk_hash("p", "/tmp/foo.py", 0, "x = 1", 1024)
+        a = compute_chunk_hash(
+            project_id="p", file_path="/tmp/foo.py", start_char=0,
+            content="x = 1", embedding_dim=768,
+        )
+        b = compute_chunk_hash(
+            project_id="p", file_path="/tmp/foo.py", start_char=0,
+            content="x = 1", embedding_dim=1024,
+        )
         assert a != b
 
 
@@ -131,7 +167,7 @@ class TestVectorContract:
         from mcp_server.domain.value_objects import Vector
 
         # 768 floats → OK
-        v = Vector([0.0] * 768, embedding_dim=768)
+        v = Vector(values=[0.0] * 768, embedding_dim=768)
         assert len(v.values) == 768
         assert v.embedding_dim == 768
 
@@ -142,18 +178,18 @@ class TestVectorContract:
         )
 
         with pytest.raises(EmbeddingDimensionMismatchError):
-            Vector([0.0] * 100, embedding_dim=768)
+            Vector(values=[0.0] * 100, embedding_dim=768)
 
     def test_vector_accepts_dim_1024(self) -> None:
         from mcp_server.domain.value_objects import Vector
 
-        v = Vector([0.0] * 1024, embedding_dim=1024)
+        v = Vector(values=[0.0] * 1024, embedding_dim=1024)
         assert v.embedding_dim == 1024
 
     def test_vector_dict_round_trip(self) -> None:
         from mcp_server.domain.value_objects import Vector
 
-        original = Vector([0.1, 0.2, 0.3], embedding_dim=3)
+        original = Vector(values=[0.1, 0.2, 0.3], embedding_dim=3)
         dumped = original.model_dump()
         rebuilt = Vector(**dumped)
         assert rebuilt == original

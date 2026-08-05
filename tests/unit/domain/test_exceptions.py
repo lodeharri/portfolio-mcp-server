@@ -125,7 +125,9 @@ class TestPreindexExceptionAndExitCode:
     def test_preindex_exit_code_is_an_enum(self) -> None:
         from mcp_server.domain.exceptions import PreindexExitCode
 
-        assert isinstance(PreindexExitCode, type(enum.Enum()))
+        import enum as _enum
+
+        assert issubclass(PreindexExitCode, _enum.Enum)
 
     def test_preindex_exit_code_ok_value(self) -> None:
         from mcp_server.domain.exceptions import PreindexExitCode

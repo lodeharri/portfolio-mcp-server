@@ -12,7 +12,9 @@ Schema follows the orchestrator's PR2 spec:
   ``include_extensions``, ``exclude_paths``, ``projects``.
 * :class:`Project` — per-project declaration: ``id``, ``path``,
   ``display_name``, ``description``, ``include_subdirs``,
-  ``exclude_subdirs``.
+  ``exclude_subdirs`` — re-exported from
+  :mod:`mcp_server.domain.entities` (PR3 split: domain owns the entity,
+  application owns the port that exposes it).
 
 The concrete YAML adapter (``infrastructure/adapters/yaml_manifest.py``)
 reads ``config/projects.manifest.yaml`` (which uses a nested
@@ -27,20 +29,11 @@ from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 
-
-class Project(BaseModel):
-    """A single project declared in the manifest.
-
-    The ``path`` is absolute and points at the project root. ``include_subdirs``
-    and ``exclude_subdirs`` are relative path segments under that root.
-    """
-
-    id: str
-    path: Path
-    display_name: str
-    description: str
-    include_subdirs: list[str] = Field(default_factory=list)
-    exclude_subdirs: list[str] = Field(default_factory=list)
+# PR3: ``Project`` moved to ``mcp_server.domain.entities`` per the
+# domain-driven-design principle that entities belong in domain/.
+# This re-export keeps PR2 callers (and the YAML adapter) working
+# without import-path churn.
+from mcp_server.domain.entities import Project  # noqa: F401
 
 
 class Manifest(BaseModel):
