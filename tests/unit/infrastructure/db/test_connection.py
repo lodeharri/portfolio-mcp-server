@@ -186,17 +186,17 @@ class TestOpenDbContract:
     ) -> None:
         """If ``schema.sql`` cannot be located, open_db MUST raise ``SchemaError``."""
         from mcp_server.domain.exceptions import SchemaError
-        from mcp_server.infrastructure import db as db_pkg
+        from mcp_server.infrastructure.db import connection
 
-        # Patch the package's schema path to a guaranteed-missing file
-        # so the ``load_schema`` helper raises ``SchemaError``.
-        monkeypatch.setattr(
-            db_pkg.connection,
-            "_SCHEMA_PATH",
-            tmp_path / "no-such-schema.sql",
-        )
+        # ``open_db`` reads the schema file from the module-level
+        # ``SCHEMA_PATH``. We monkeypatch the helper used inside
+        # ``open_db`` so the missing-file path is exercised.
+        def _raise() -> str:
+            raise FileNotFoundError("simulated missing schema.sql")
+
+        monkeypatch.setattr(connection, "_read_schema_script", _raise)
         with pytest.raises(SchemaError):
-            db_pkg.connection.open_db(tmp_path / "x.sqlite")
+            connection.open_db(tmp_path / "x.sqlite")
 
 
 # ---------------------------------------------------------------------------
