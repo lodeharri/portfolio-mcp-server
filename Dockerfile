@@ -73,6 +73,7 @@ RUN curl -fsSL \
 COPY pyproject.toml README.md ./
 COPY src ./src
 COPY config ./config
+COPY scripts ./scripts
 
 # Build a venv and install the package into it. The pip cache mount
 # keeps wheels out of the layer (saves ~50 MB on the builder; the
@@ -81,14 +82,7 @@ RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir . \
-    # Slim down 100MB of dead weight: google-generativeai (the
-    # deprecated SDK) pulls in google-api-python-client (~100MB) which
-    # we don't use. Until we migrate to google-genai (the new SDK),
-    # drop the bloat here. Track the migration in
-    # tests/integration/test_docker_size.py if/when we do.
-    && rm -rf /opt/venv/lib/python3.10/site-packages/googleapiclient \
-    && rm -rf /opt/venv/lib/python3.10/site-packages/google_cloud_aiplatform_central_root 2>/dev/null || true
+    && pip install --no-cache-dir .
 
 # Pre-bake a schema-only vector index. The build context does NOT
 # include the sibling project trees (absolute paths in the manifest
