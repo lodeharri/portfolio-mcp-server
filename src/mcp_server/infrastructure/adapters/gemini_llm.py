@@ -14,6 +14,13 @@ constants, same hand-rolled loop.
 
 A :class:`MockLlmAdapter` is provided for tests so future MCP-tool use
 cases don't have to mock the SDK.
+
+SDK migration note
+------------------
+
+This module uses the new ``google-genai`` SDK (the official replacement
+for the deprecated ``google-generativeai``). See the embedding
+adapter's docstring for the size rationale.
 """
 
 from __future__ import annotations
@@ -22,7 +29,8 @@ import random
 import time
 from typing import Final, Protocol
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 from mcp_server.application.ports.llm import LLMPort
 from mcp_server.domain.exceptions import GeminiPermanentError, GeminiTransientError
@@ -42,7 +50,7 @@ __all__ = [
 MAX_ATTEMPTS: Final[int] = 3
 BASE_DELAY: Final[float] = 1.0
 MAX_DELAY: Final[float] = 30.0
-DEFAULT_MODEL: Final[str] = "models/gemini-2.0-flash"
+DEFAULT_MODEL: Final[str] = "gemini-2.0-flash"
 
 
 # ---------------------------------------------------------------------------
@@ -50,10 +58,14 @@ DEFAULT_MODEL: Final[str] = "models/gemini-2.0-flash"
 # ---------------------------------------------------------------------------
 
 
-def _build_genai_client(api_key: str) -> genai.GenerativeModel:
-    """Configure the global SDK and return the chat model client."""
-    genai.configure(api_key=api_key)
-    return genai.GenerativeModel(DEFAULT_MODEL)
+def _build_genai_client(api_key: str) -> "genai.Client":
+    """Build a real ``google.genai.Client`` for production use.
+
+    The new SDK uses a stateless client created once with the API key;
+    requests are bound to the model at call time. Tests override this
+    function via the ``client_factory`` constructor argument.
+    """
+    return genai.Client(api_key=api_key)
 
 
 # ---------------------------------------------------------------------------
@@ -80,7 +92,7 @@ def _status_from_exception(exc: BaseException) -> int | None:
 class _LlmClientLike(Protocol):
     """Structural shape the LLM adapter needs from the SDK client."""
 
-    def generate_content(self, **kwargs: object) -> object: ...
+    def models(self) -> object: ...
 
 
 # ---------------------------------------------------------------------------
@@ -89,11 +101,11 @@ class _LlmClientLike(Protocol):
 
 
 class GeminiLlmAdapter:
-    """Real :class:`LLMPort` impl backed by ``google.generativeai``.
+    """Real :class:`LLMPort` impl backed by ``google-genai``.
 
     Args:
         api_key: Gemini API key.
-        model: Gemini chat model. Default ``"models/gemini-2.0-flash"``.
+        model: Gemini chat model. Default ``"gemini-2.0-flash"``.
         client_factory: Pluggable client builder; tests override this
             to inject a fake transport.
         clock: Pluggable sleep source.
@@ -119,9 +131,7 @@ class GeminiLlmAdapter:
             f"Summarize the following text in at most {max_tokens} tokens:\n\n"
             f"{text}"
         )
-        return self._generate_with_retry(
-            contents=[{"role": "user", "parts": [prompt]}]
-        )
+        return self._generate_with_retry(contents=prompt)
 
     def chat(
         self,
@@ -131,11 +141,15 @@ class GeminiLlmAdapter:
         """Multi-turn chat completion with optional tool definitions.
 
         ``messages`` is the OpenAI-style list of
-        ``{"role": ..., "content": ...}`` dicts translated to Gemini's
-        ``contents`` shape.
+        ``{"role": ..., "content": ...}`` dicts translated to the new
+        SDK's ``Content`` objects.
         """
         contents = [
-            {"role": m["role"], "parts": [m["content"]]} for m in messages
+            types.Content(
+                role=m["role"],
+                parts=[types.Part(text=m["content"])],
+            )
+            for m in messages
         ]
         return self._generate_with_retry(
             contents=contents,
@@ -145,20 +159,21 @@ class GeminiLlmAdapter:
     def _generate_with_retry(
         self,
         *,
-        contents: list[dict],
+        contents,  # str OR list[types.Content]
         tools: list[dict] | None = None,
     ) -> str:
-        """Run ``generate_content`` with the ADR-003 retry policy."""
+        """Run ``client.models.generate_content`` with the ADR-003 retry policy."""
         last_exc: BaseException | None = None
         for attempt in range(1, MAX_ATTEMPTS + 1):
             try:
-                kwargs: dict[str, object] = {
-                    "model": self._model,
-                    "contents": contents,
-                }
+                config = None
                 if tools is not None:
-                    kwargs["tools"] = tools
-                response = self._client.generate_content(**kwargs)
+                    config = types.GenerateContentConfig(tools=tools)
+                response = self._client.models.generate_content(
+                    model=self._model,
+                    contents=contents,
+                    config=config,
+                )
                 return self._extract_text(response)
             except GeminiPermanentError:
                 raise
@@ -182,10 +197,12 @@ class GeminiLlmAdapter:
 
     @staticmethod
     def _extract_text(response: object) -> str:
-        """Pull text content out of a Gemini ``GenerateContentResponse``."""
+        """Pull text content out of a google-genai ``GenerateContentResponse``."""
+        # Prefer the convenience ``response.text`` attribute.
         text = getattr(response, "text", None)
         if isinstance(text, str) and text:
             return text
+        # Fall back to walking the candidates list.
         candidates = getattr(response, "candidates", None)
         if isinstance(candidates, list) and candidates:
             first = candidates[0]

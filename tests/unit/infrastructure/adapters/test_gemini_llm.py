@@ -83,14 +83,16 @@ class TestMockLlmAdapter:
 
 
 def _build_fake_client(text_response: str) -> MagicMock:
-    """Build a fake Gemini client returning the given text."""
+    """Build a fake ``genai.Client`` returning the given text."""
     client = MagicMock()
     response = MagicMock()
     response.text = text_response
     response.candidates = [MagicMock()]
     response.candidates[0].content.parts = [MagicMock()]
     response.candidates[0].content.parts[0].text = text_response
-    client.generate_content = MagicMock(return_value=response)
+    # New SDK shape: ``client.models.generate_content(...)``.
+    client.models = MagicMock()
+    client.models.generate_content = MagicMock(return_value=response)
     return client
 
 
@@ -150,7 +152,7 @@ class TestRetryPolicy:
             raise type("RateLimit", (Exception,), {"status_code": 429})("rate")
 
         fake = MagicMock()
-        fake.generate_content = MagicMock(side_effect=_fail)
+        fake.models.generate_content = MagicMock(side_effect=_fail)
         monkeypatch.setattr(gl, "_build_genai_client", lambda api_key: fake)
         monkeypatch.setattr(gl.time, "sleep", lambda _s: None)
 
@@ -168,7 +170,7 @@ class TestRetryPolicy:
             raise type("BadRequest", (Exception,), {"status_code": 400})("bad")
 
         fake = MagicMock()
-        fake.generate_content = MagicMock(side_effect=_bad)
+        fake.models.generate_content = MagicMock(side_effect=_bad)
         monkeypatch.setattr(gl, "_build_genai_client", lambda api_key: fake)
 
         sleeps: list[float] = []
@@ -178,7 +180,7 @@ class TestRetryPolicy:
         with pytest.raises(GeminiPermanentError):
             adapter.summarize("hi")
         # 1 attempt + 0 sleeps = fail-fast.
-        assert fake.generate_content.call_count == 1
+        assert fake.models.generate_content.call_count == 1
         assert sleeps == []
 
 

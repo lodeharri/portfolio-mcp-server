@@ -25,6 +25,15 @@ Mock variant
 :class:`MockEmbeddingAdapter` implements the same port with deterministic
 hash-of-text → 768-float vectors so tests and ``--mock-gemini`` runs are
 fast and reproducible.
+
+SDK migration note
+-------------------
+
+This module uses the new ``google-genai`` SDK (the official replacement
+for the deprecated ``google-generativeai``). The new SDK is ~50 MB
+smaller at install time because it no longer pulls in
+``google-api-python-client`` (the deprecated cache-uploader used by the
+old SDK). See ``verify-report-pr4.md`` for the size rationale.
 """
 
 from __future__ import annotations
@@ -34,7 +43,8 @@ import random
 import time
 from typing import Final, Protocol
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 from mcp_server.application.ports.embedding import EmbeddingPort
 from mcp_server.domain.exceptions import GeminiPermanentError, GeminiTransientError
@@ -55,6 +65,7 @@ MAX_ATTEMPTS: Final[int] = 3
 BASE_DELAY: Final[float] = 1.0
 MAX_DELAY: Final[float] = 30.0
 DEFAULT_EMBEDDING_DIM: Final[int] = 768
+DEFAULT_EMBEDDING_MODEL: Final[str] = "text-embedding-004"  # 768-dim, free tier
 
 
 # ---------------------------------------------------------------------------
@@ -62,25 +73,17 @@ DEFAULT_EMBEDDING_DIM: Final[int] = 768
 # ---------------------------------------------------------------------------
 
 
-def _build_genai_client(api_key: str) -> genai.GenerativeModel:
-    """Configure the global google.generativeai SDK and return a thin wrapper.
+def _build_genai_client(api_key: str) -> "genai.Client":
+    """Build a real ``google.genai.Client`` for production use.
 
-    Real SDK usage::
+    The new SDK uses a stateless client created once with the API key;
+    requests are bound to the model at call time. This lets the same
+    client back both embedding and chat endpoints.
 
-        import google.generativeai as genai
-        genai.configure(api_key=api_key)
-        client = genai.GenerativeModel(model_name="models/text-embedding-004")
-
-    In production this returns the real client. In tests we
-    monkeypatch the module-level ``_build_genai_client`` to inject a
-    fake. The adapter only ever calls ``embed_content`` on whatever
-    client is returned.
+    Tests override this function via the ``client_factory`` constructor
+    argument to inject a fake transport.
     """
-    genai.configure(api_key=api_key)
-    # Returning a ``GenerativeModel`` keeps the SDK happy for both
-    # real and test paths — the tests replace the whole ``embed_content``
-    # call.
-    return genai.GenerativeModel("models/text-embedding-004")
+    return genai.Client(api_key=api_key)
 
 
 # ---------------------------------------------------------------------------
@@ -94,11 +97,9 @@ _RETRYABLE_STATUSES: Final[frozenset[int]] = frozenset({429, 500, 502, 503, 504}
 def _status_from_exception(exc: BaseException) -> int | None:
     """Read a ``status_code`` attribute off the SDK exception if present.
 
-    The google-generativeai SDK exposes a few exception types
-    (``google.api_core.exceptions.*``) that carry ``status_code``.
-    Older versions used custom exception classes that don't. Falling
-    back to ``None`` lets the caller treat anything without a status
-    as a network/parsing error → transient.
+    The new google-genai SDK raises ``google.api_core.exceptions.*`` that
+    carry ``status_code``. Falling back to ``None`` lets the caller treat
+    anything without a status as a network/parsing error → transient.
     """
     code = getattr(exc, "status_code", None)
     if isinstance(code, int):
@@ -120,16 +121,16 @@ class _ClientLike(Protocol):
     Lets the test fake supply a ``MagicMock`` with the same interface.
     """
 
-    def embed_content(self, *, model: str, content: list[str], task_type: str) -> object: ...
+    def models(self) -> object: ...
 
 
 class GeminiEmbeddingAdapter:
-    """EmbeddingPort implementation backed by ``google.generativeai``.
+    """EmbeddingPort implementation backed by ``google-genai``.
 
     Args:
-        api_key: Gemini API key. Used to configure the global SDK.
+        api_key: Gemini API key. Used to configure the new SDK client.
         model: Gemini embedding model identifier. Default
-            ``"models/text-embedding-004"`` (768-dim, free tier).
+            ``"text-embedding-004"`` (768-dim, free tier).
         embedding_dim: Expected output dimension. Default 768.
         clock: Pluggable sleep source — tests inject a no-op so the
             retry loop stays fast. Default ``time.sleep``.
@@ -147,7 +148,7 @@ class GeminiEmbeddingAdapter:
         self,
         api_key: str,
         *,
-        model: str = "models/text-embedding-004",
+        model: str = DEFAULT_EMBEDDING_MODEL,
         embedding_dim: int = DEFAULT_EMBEDDING_DIM,
         client_factory=None,
         clock=None,
@@ -163,10 +164,11 @@ class GeminiEmbeddingAdapter:
     def embed(self, texts: list[str]) -> list[list[float]]:
         """Embed a batch of texts with retry + fail-fast policy.
 
-        One ``embed_content`` call per text — the SDK does not natively
-        batch, so the adapter loops over ``texts``. The 0.1 s pacing
-        between *successful* calls is the use case's responsibility
-        (per ADR-003 follow-up); this method only sleeps on retries.
+        One ``client.models.embed_content(...)`` call per text — the SDK
+        does not natively batch, so the adapter loops over ``texts``. The
+        0.1 s pacing between *successful* calls is the use case's
+        responsibility (per ADR-003 follow-up); this method only sleeps
+        on retries.
 
         Returns:
             One ``list[float]`` per input. ``len(result[i]) == embedding_dim``.
@@ -181,10 +183,12 @@ class GeminiEmbeddingAdapter:
         last_exc: BaseException | None = None
         for attempt in range(1, MAX_ATTEMPTS + 1):
             try:
-                response = self._client.embed_content(
+                response = self._client.models.embed_content(
                     model=self._model,
-                    content=text,
-                    task_type="RETRIEVAL_DOCUMENT",
+                    contents=text,
+                    config=types.EmbedContentConfig(
+                        task_type="RETRIEVAL_DOCUMENT",
+                    ),
                 )
                 return self._extract_single(response)
             except GeminiPermanentError:
@@ -215,38 +219,26 @@ class GeminiEmbeddingAdapter:
         self._sleep(delay)
 
     def _extract_single(self, response: object) -> list[float]:
-        """Extract the single vector from a Gemini ``embed_content`` response.
+        """Extract the single vector from a google-genai ``EmbedContentResponse``.
 
-        The SDK's response shape varies between versions (dict-style
-        ``{"embedding": {"values": [...]}}`` vs object-style
-        ``response.embedding['values']``). Try both; raise on shape
-        mismatch.
+        The new SDK returns ``response.embeddings`` (a list of
+        ``ContentEmbedding`` objects); each has ``.values`` (the list of
+        floats). We always request one embedding per call so the list
+        has exactly one element.
         """
-        if isinstance(response, dict):
-            embedding = response.get("embedding")
-        else:
-            embedding = getattr(response, "embedding", None)
-
-        if embedding is None:
+        embeddings = getattr(response, "embeddings", None)
+        if not isinstance(embeddings, list) or not embeddings:
             raise GeminiTransientError(
-                "malformed gemini response: missing embedding field"
+                "malformed gemini response: missing embeddings list"
             )
 
-        # Object-style: response.embedding is a dict with "values".
-        if isinstance(embedding, dict):
-            values = embedding.get("values")
-            if not isinstance(values, list):
-                raise GeminiTransientError(
-                    "malformed gemini response: missing values"
-                )
-            return [float(v) for v in values]
-
-        # Object-style with attribute access.
-        values = getattr(embedding, "values", None)
-        if isinstance(values, list):
-            return [float(v) for v in values]
-
-        raise GeminiTransientError("malformed gemini response: unknown shape")
+        first = embeddings[0]
+        values = getattr(first, "values", None)
+        if not isinstance(values, list):
+            raise GeminiTransientError(
+                "malformed gemini response: missing values in ContentEmbedding"
+            )
+        return [float(v) for v in values]
 
 
 # ---------------------------------------------------------------------------

@@ -33,15 +33,15 @@ import pytest
 
 
 # ---------------------------------------------------------------------------
-# Fake google.generativeai transport
+# Fake google-genai transport
 # ---------------------------------------------------------------------------
 
 
 def _build_fake_client(responses: list[Any]) -> MagicMock:
     """Build a MagicMock standing in for ``genai.Client``.
 
-    Each call to ``embed_content`` returns the next entry in
-    ``responses``. The last entry is reused for any extra call so a
+    Each call to ``client.models.embed_content`` returns the next entry
+    in ``responses``. The last entry is reused for any extra call so a
     test can declare "first two calls return X, then any further call
     raises".
     """
@@ -53,19 +53,22 @@ def _build_fake_client(responses: list[Any]) -> MagicMock:
         cursor["i"] += 1
         return responses[min(idx, len(responses) - 1)]
 
-    client.embed_content = MagicMock(side_effect=_embed_content)
+    # The new SDK uses ``client.models.embed_content(...)`` rather than
+    # ``client.embed_content(...)``. Mirror that structure precisely.
+    client.models = MagicMock()
+    client.models.embed_content = MagicMock(side_effect=_embed_content)
     return client
 
 
 def _embed_response(floats: list[float]) -> Any:
-    """Build a fake ``genai.EmbedContentResponse`` with ``floats``.
+    """Build a fake ``EmbedContentResponse`` with ``floats``.
 
-    The real response object has ``.get('embedding', ...)`` semantics
-    in some SDK versions and ``.embedding['values']`` in others. We
-    mimic the latter because it's the public shape the adapter uses.
+    The new google-genai SDK returns ``response.embeddings`` (a list of
+    ``ContentEmbedding`` objects); each has ``.values`` (the list of
+    floats). The adapter requests exactly one embedding per call.
     """
     fake = MagicMock()
-    fake.embedding = {"values": list(floats)}
+    fake.embeddings = [MagicMock(values=list(floats))]
     return fake
 
 
@@ -165,7 +168,7 @@ class TestRetryPolicyOn429:
                 raise type("RateLimit", (Exception,), {"status_code": 429})("rate")
             return _embed_response([0.0] * 768)
 
-        fake_client.embed_content = MagicMock(side_effect=_embed_content)
+        fake_client.models.embed_content = MagicMock(side_effect=_embed_content)
         monkeypatch.setattr(ge.random, "uniform", lambda _a, _b: 0.3)
 
         adapter = ge.GeminiEmbeddingAdapter(api_key="dummy")
@@ -185,7 +188,7 @@ class TestRetryPolicyOn429:
             raise type("RateLimit", (Exception,), {"status_code": 429})("rate")
 
         fake_client = MagicMock()
-        fake_client.embed_content = MagicMock(side_effect=_always_429)
+        fake_client.models.embed_content = MagicMock(side_effect=_always_429)
         monkeypatch.setattr(ge, "_build_genai_client", lambda api_key: fake_client)
         monkeypatch.setattr(ge.time, "sleep", lambda _s: None)
 
@@ -193,7 +196,7 @@ class TestRetryPolicyOn429:
         with pytest.raises(GeminiTransientError):
             adapter.embed(["hi"])
         # 3 attempts total — 2 sleeps.
-        assert fake_client.embed_content.call_count == 3
+        assert fake_client.models.embed_content.call_count == 3
 
     def test_5xx_raises_transient_error_without_retry_after_three_attempts(
         self, monkeypatch
@@ -207,7 +210,7 @@ class TestRetryPolicyOn429:
             raise type("Unavailable", (Exception,), {"status_code": 503})("down")
 
         fake_client = MagicMock()
-        fake_client.embed_content = MagicMock(side_effect=_always_5xx)
+        fake_client.models.embed_content = MagicMock(side_effect=_always_5xx)
         monkeypatch.setattr(ge, "_build_genai_client", lambda api_key: fake_client)
         monkeypatch.setattr(ge.time, "sleep", lambda _s: None)
 
@@ -215,7 +218,7 @@ class TestRetryPolicyOn429:
         with pytest.raises(GeminiTransientError):
             adapter.embed(["hi"])
         # 3 attempts total.
-        assert fake_client.embed_content.call_count == 3
+        assert fake_client.models.embed_content.call_count == 3
 
 
 # ---------------------------------------------------------------------------
@@ -236,7 +239,7 @@ class TestFailFastOn4xx:
             raise type("BadRequest", (Exception,), {"status_code": 400})("bad payload")
 
         fake_client = MagicMock()
-        fake_client.embed_content = MagicMock(side_effect=_400)
+        fake_client.models.embed_content = MagicMock(side_effect=_400)
         monkeypatch.setattr(ge, "_build_genai_client", lambda api_key: fake_client)
 
         sleeps: list[float] = []
@@ -246,7 +249,7 @@ class TestFailFastOn4xx:
         with pytest.raises(GeminiPermanentError):
             adapter.embed(["hi"])
         # 4xx fails fast — exactly 1 attempt, 0 sleeps.
-        assert fake_client.embed_content.call_count == 1
+        assert fake_client.models.embed_content.call_count == 1
         assert sleeps == []
 
     def test_403_raises_permanent_error(self, monkeypatch) -> None:
@@ -259,7 +262,7 @@ class TestFailFastOn4xx:
             raise type("Forbidden", (Exception,), {"status_code": 403})("denied")
 
         fake_client = MagicMock()
-        fake_client.embed_content = MagicMock(side_effect=_403)
+        fake_client.models.embed_content = MagicMock(side_effect=_403)
         monkeypatch.setattr(ge, "_build_genai_client", lambda api_key: fake_client)
         monkeypatch.setattr(ge.time, "sleep", lambda _s: None)
 
