@@ -205,12 +205,21 @@ class YamlManifestAdapter:
           AND
         * ``path`` is NOT under any of the project's ``exclude_subdirs``,
           AND
+        * ``path`` is NOT under any of the global ``indexing.exclude_paths``
+          segments (e.g. ``node_modules``, ``dist``) at any depth, AND
         * ``path``'s extension is in the manifest's ``include_extensions``.
         """
         manifest = self.load()
         try:
             resolved = Path(path).resolve(strict=False)
         except (OSError, RuntimeError):
+            return False
+
+        # Global exclude_paths is enforced at any depth — matches the
+        # shipped manifest's `node_modules`, `dist`, etc. list. A nested
+        # path like `backend/node_modules/leak.py` MUST be denied even
+        # when `backend` is an `include_subdirs`.
+        if self._under_any_global(resolved, manifest.exclude_paths):
             return False
 
         for project in manifest.projects:
@@ -251,6 +260,24 @@ class YamlManifestAdapter:
         if not rel_parts:
             return False
         return rel_parts[0] in prefixes
+
+    @staticmethod
+    def _under_any_global(resolved: Path, prefixes: list[str]) -> bool:
+        """Return True if any segment of ``resolved`` matches a global
+        exclude path token.
+
+        Compares each ``resolved.parts`` entry against ``prefixes`` so
+        ``prefixes: ["node_modules"]`` denies every path that contains
+        a ``node_modules`` segment at any depth — e.g.
+        ``/home/x/proj/backend/node_modules/leak.py`` is denied even
+        though ``backend`` is an include_subdir.
+        """
+        if not prefixes:
+            return False
+        token_set = {token for token in prefixes if token}
+        if not token_set:
+            return False
+        return any(part in token_set for part in resolved.parts)
 
 
 __all__ = ["YamlManifestAdapter"]
