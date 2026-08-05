@@ -12,11 +12,11 @@ must:
 * Return JSON-serializable dicts (``list[dict]`` for the two PR1
   tools).
 
-The test bypasses the FastMCP server and calls the tool functions
+The test bypasses the FastMCP transport and calls the tool functions
 directly after calling :func:`set_use_cases` to inject fakes. The
-``@mcp.tool`` decorator stores the original function as ``fn`` on the
-returned :class:`FunctionTool` so we can still call the underlying
-async function.
+``@mcp.tool`` decorator stores the original function as ``.fn`` on
+the returned :class:`FunctionTool` so we can still call the
+underlying async function from sync test code via ``asyncio.run``.
 
 We also assert the wrapper emits no ``output.redacted`` audit events
 on its own — sanitization happens inside the use case (Layer 3
@@ -25,6 +25,7 @@ discipline, ADR-003).
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import pytest
@@ -127,11 +128,8 @@ class TestListProjectsTool:
         ]
         list_uc = _FakeListProjectsUseCase(projects=projects)
         _set_fake_use_cases(list_projects_uc=list_uc)
-        from mcp_server.interfaces.mcp import tools
 
-        # Call the underlying async function (the @mcp.tool decorator
-        # stores the original on .fn).
-        out = _call_list_projects_tool(tools)
+        out = asyncio.run(_call_list_projects_tool())
 
         assert out == projects
         assert list_uc.calls == 1
@@ -139,41 +137,39 @@ class TestListProjectsTool:
     def test_empty_use_case_returns_empty_list(self) -> None:
         list_uc = _FakeListProjectsUseCase(projects=[])
         _set_fake_use_cases(list_projects_uc=list_uc)
-        from mcp_server.interfaces.mcp import tools
 
-        out = _call_list_projects_tool(tools)
+        out = asyncio.run(_call_list_projects_tool())
 
         assert out == []
 
     def test_domain_error_translates_to_tool_error(self) -> None:
         from fastmcp.exceptions import ToolError
 
-        list_uc = _FakeListProjectsUseCase(
-            projects=[],
-        )
-        # The fake's execute is called once; raise the domain error
-        # on the second call.
-        original_execute = list_uc.execute
+        # Fake that raises on the second call (so the wrapper's
+        # try/except kicks in). We track calls via a counter.
+        class _RaisingOnSecondCall:
+            def __init__(self) -> None:
+                self.calls = 0
 
-        def raise_on_call() -> list[dict[str, Any]]:
-            if list_uc.calls == 0:
-                list_uc.calls += 1
-                return []
-            raise ManifestProjectNotFoundError(
-                "project 'foo' not declared in manifest"
-            )
+            def execute(self) -> list[dict[str, Any]]:
+                self.calls += 1
+                if self.calls == 1:
+                    return []
+                raise ManifestProjectNotFoundError(
+                    "project 'foo' not declared in manifest"
+                )
 
-        list_uc.execute = raise_on_call  # type: ignore[method-assign]
-        _set_fake_use_cases(list_projects_uc=list_uc)
-        from mcp_server.interfaces.mcp import tools
+        list_uc = _RaisingOnSecondCall()  # type: ignore[arg-type]
+        _set_fake_use_cases(list_projects_uc=list_uc)  # type: ignore[arg-type]
 
+        # First call: empty result.
+        first = asyncio.run(_call_list_projects_tool())
+        assert first == []
+
+        # Second call: must raise ToolError with the project id echoed.
         with pytest.raises(ToolError) as exc_info:
-            _call_list_projects_tool(tools)
-        # The translated message echoes the project_id.
+            asyncio.run(_call_list_projects_tool())
         assert "foo" in str(exc_info.value)
-
-        # Reset (test hygiene).
-        list_uc.execute = original_execute  # type: ignore[method-assign]
 
 
 # ---------------------------------------------------------------------------
@@ -198,9 +194,8 @@ class TestSearchCodeTool:
         ]
         search_uc = _FakeSearchCodeUseCase(results=results)
         _set_fake_use_cases(search_uc=search_uc)
-        from mcp_server.interfaces.mcp import tools
 
-        out = _call_search_code_tool(tools, query="rate limiting", top_k=5, project_id="p")
+        out = asyncio.run(_call_search_code_tool(query="rate limiting", top_k=5, project_id="p"))
 
         assert out == results
         # The use case received the expected request fields.
@@ -212,9 +207,8 @@ class TestSearchCodeTool:
         """Per the spec, ``top_k`` defaults to 5."""
         search_uc = _FakeSearchCodeUseCase()
         _set_fake_use_cases(search_uc=search_uc)
-        from mcp_server.interfaces.mcp import tools
 
-        _call_search_code_tool(tools, query="hello")
+        asyncio.run(_call_search_code_tool(query="hello"))
 
         assert search_uc.calls[0]["top_k"] == 5
         assert search_uc.calls[0]["project_id"] is None
@@ -226,10 +220,9 @@ class TestSearchCodeTool:
             raise_exc=ValueError("query must be a non-empty string")
         )
         _set_fake_use_cases(search_uc=search_uc)
-        from mcp_server.interfaces.mcp import tools
 
         with pytest.raises(ToolError) as exc_info:
-            _call_search_code_tool(tools, query="")
+            asyncio.run(_call_search_code_tool(query=""))
         assert "non-empty" in str(exc_info.value)
 
     def test_gemini_transient_translates_to_authored_message(self) -> None:
@@ -242,10 +235,9 @@ class TestSearchCodeTool:
             raise_exc=GeminiTransientError("429 rate limit exhausted")
         )
         _set_fake_use_cases(search_uc=search_uc)
-        from mcp_server.interfaces.mcp import tools
 
         with pytest.raises(ToolError) as exc_info:
-            _call_search_code_tool(tools, query="hi")
+            asyncio.run(_call_search_code_tool(query="hi"))
         # Authored message — no raw "429" leak.
         assert "429" not in str(exc_info.value)
         assert "temporarily" in str(exc_info.value).lower()
@@ -258,10 +250,9 @@ class TestSearchCodeTool:
 
         search_uc = _FakeSearchCodeUseCase(raise_exc=CustomDomainError("oops"))
         _set_fake_use_cases(search_uc=search_uc)
-        from mcp_server.interfaces.mcp import tools
 
         with pytest.raises(ToolError) as exc_info:
-            _call_search_code_tool(tools, query="hi")
+            asyncio.run(_call_search_code_tool(query="hi"))
         # The generic domain default is "internal error" (no raw leak).
         assert "oops" not in str(exc_info.value)
         assert "internal error" in str(exc_info.value).lower()
@@ -270,14 +261,13 @@ class TestSearchCodeTool:
         """``TypeError`` from a use case MUST NOT be caught by the wrapper."""
         search_uc = _FakeSearchCodeUseCase(raise_exc=TypeError("'NoneType' has no attribute 'x'"))
         _set_fake_use_cases(search_uc=search_uc)
-        from mcp_server.interfaces.mcp import tools
 
         with pytest.raises(TypeError):
-            _call_search_code_tool(tools, query="hi")
+            asyncio.run(_call_search_code_tool(query="hi"))
 
 
 # ---------------------------------------------------------------------------
-# @mcp.tool registration (introspection)
+# @mcp.tool registration (introspection via the async FastMCP API)
 # ---------------------------------------------------------------------------
 
 
@@ -287,13 +277,13 @@ class TestToolRegistration:
     def test_list_projects_is_registered(self) -> None:
         from mcp_server.interfaces.mcp.server import mcp
 
-        names = {tool.name for tool in mcp._tool_manager._tools.values()}
+        names = asyncio.run(_registered_tool_names(mcp))
         assert "list_projects" in names
 
     def test_search_code_is_registered(self) -> None:
         from mcp_server.interfaces.mcp.server import mcp
 
-        names = {tool.name for tool in mcp._tool_manager._tools.values()}
+        names = asyncio.run(_registered_tool_names(mcp))
         assert "search_code" in names
 
 
@@ -302,7 +292,13 @@ class TestToolRegistration:
 # ---------------------------------------------------------------------------
 
 
-def _call_list_projects_tool(tools_module: Any) -> list[dict[str, Any]]:
+async def _registered_tool_names(server: Any) -> set[str]:
+    """Return the set of tool names currently registered on ``server``."""
+    tools = await server.list_tools()
+    return {t.name for t in tools}
+
+
+async def _call_list_projects_tool() -> list[dict[str, Any]]:
     """Call the ``list_projects_tool`` async function directly.
 
     The ``@mcp.tool`` decorator stores the original function as
@@ -310,25 +306,17 @@ def _call_list_projects_tool(tools_module: Any) -> list[dict[str, Any]]:
     directly so the test exercises the wrapper's exception
     translation without going through FastMCP's transport.
     """
-    import asyncio
-
     from mcp_server.interfaces.mcp.server import mcp
 
-    tool = next(
-        t for t in mcp._tool_manager._tools.values() if t.name == "list_projects"
-    )
-    return asyncio.run(tool.fn())
+    tool = await mcp.get_tool("list_projects")
+    return await tool.fn()
 
 
-def _call_search_code_tool(
-    tools_module: Any, *, query: str, top_k: int = 5, project_id: str | None = None
+async def _call_search_code_tool(
+    *, query: str, top_k: int = 5, project_id: str | None = None
 ) -> list[dict[str, Any]]:
     """Call the ``search_code_tool`` async function directly."""
-    import asyncio
-
     from mcp_server.interfaces.mcp.server import mcp
 
-    tool = next(
-        t for t in mcp._tool_manager._tools.values() if t.name == "search_code"
-    )
-    return asyncio.run(tool.fn(query=query, top_k=top_k, project_id=project_id))
+    tool = await mcp.get_tool("search_code")
+    return await tool.fn(query=query, top_k=top_k, project_id=project_id)

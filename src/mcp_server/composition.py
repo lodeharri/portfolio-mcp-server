@@ -192,6 +192,20 @@ def create_composition(
         audit=audit,
     )
 
+    # Side-effect import: register the @mcp.tool wrappers with the
+    # FastMCP instance (the decorator runs at module-load time) and
+    # then populate the wrapper's use case container with the
+    # instances we just built. This MUST happen after both the use
+    # cases and the tools module are importable; doing it here keeps
+    # the wiring in a single place (ADR-001 + composition root
+    # discipline).
+    from mcp_server.interfaces.mcp import tools as _tools  # noqa: E402
+
+    _tools.set_use_cases(
+        list_projects_uc=list_projects_use_case,
+        search_uc=search_use_case,
+    )
+
     return Composition(
         config=config,
         manifest=manifest,
