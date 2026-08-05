@@ -7,28 +7,20 @@ adapters (``infrastructure/adapters/`` and ``security/``) and use cases
 for the eager-wiring rationale (fail-fast, single source of truth, trivial
 hexagonal invariant enforcement).
 
-PR1 scope: this module exposes the :class:`Composition` dataclass with all
-adapter fields as ``None`` placeholders.
+Change history:
 
-PR2 (``security-layers``) wires the five security adapters:
-
-* ``manifest`` — :class:`YamlManifestAdapter` (Layer 1)
-* ``secret_scanner`` — :class:`GitleaksScanner` (Layer 2)
-* ``sanitizer`` — :class:`OutputSanitizer` (Layer 3, also wired as
-  middleware in ``interfaces/http/middleware/sanitizer.py``)
-* ``rate_limiter`` — :class:`SlowapiRateLimiter` (Layer 5)
-* ``audit`` — :class:`AuditLogger` (Layer 5)
-
-PR3 (``preindex-pipeline``) wires the remaining adapters:
-
-* ``embedding`` — :class:`MockEmbeddingAdapter` (deterministic) when
-  ``use_mock_gemini=True``, otherwise :class:`GeminiEmbeddingAdapter`.
-* ``llm`` — :class:`MockLlmAdapter` (or :class:`GeminiLlmAdapter`).
-* ``vector_store`` — :class:`SqliteVecStore` over the configured DB.
-
-And wires the preindex use case:
-
-* ``preindex_use_case`` — :class:`IndexProjectUseCase` (PR3 scope).
+* **001-bootstrap PR1** — composition root, AppConfig, /healthz,
+  FastMCP mount. ``Composition`` exposes adapter fields only.
+* **001-bootstrap PR2 (security-layers)** — wires the five security
+  adapters: ``manifest``, ``secret_scanner``, ``sanitizer``,
+  ``rate_limiter``, ``audit``.
+* **001-bootstrap PR3 (preindex-pipeline)** — wires the remaining
+  adapters (``embedding``, ``llm``, ``vector_store``) and the
+  preindex use case (``preindex_use_case``).
+* **002-mcp-tools PR1** — wires the two read-only MCP tool use
+  cases (``list_projects_use_case``, ``search_use_case``). The
+  remaining 4 MCP tool use cases and the Pydantic AI ``Agent``
+  land in PR2 / PR3.
 """
 
 from __future__ import annotations
@@ -43,6 +35,7 @@ from mcp_server.application.ports.rate_limiter import RateLimiterPort
 from mcp_server.application.ports.secret_scanner import SecretScannerPort
 from mcp_server.application.ports.vector_store import VectorStorePort
 from mcp_server.application.use_cases.index_project import IndexProjectUseCase
+from mcp_server.application.use_cases.list_projects import ListProjectsUseCase
 from mcp_server.config import AppConfig, load_config
 from mcp_server.domain.exceptions import (
     ManifestError,
@@ -71,7 +64,7 @@ class Composition:
 
     Frozen so it cannot be mutated mid-request (ADR-001 follow-up).
     Each field carries the wired adapter instance OR ``None`` when the
-    adapter has not yet been implemented (PR4 / 002-mcp-tools).
+    adapter has not yet been implemented (002-mcp-tools PR2 / PR3).
 
     Fields:
 
@@ -85,8 +78,10 @@ class Composition:
     * ``audit`` — :class:`AuditLogger` — PR2 (Layer 5).
     * ``sanitizer`` — :class:`OutputSanitizer` — PR2 (Layer 3).
     * ``preindex_use_case`` — :class:`IndexProjectUseCase` — PR3.
-    * ``search_use_case`` — 002-mcp-tools (left as ``None``).
-    * ``list_projects_use_case`` — 002-mcp-tools (left as ``None``).
+    * ``list_projects_use_case`` — :class:`ListProjectsUseCase` —
+      002-mcp-tools PR1.
+    * ``search_use_case`` — :class:`SearchCodeUseCase` — 002-mcp-tools
+      PR1.
     """
 
     config: AppConfig
@@ -99,8 +94,8 @@ class Composition:
     audit: AuditLogger
     sanitizer: OutputSanitizer
     preindex_use_case: object | None
+    list_projects_use_case: ListProjectsUseCase | None
     search_use_case: object | None
-    list_projects_use_case: object | None
 
 
 def create_composition(
@@ -119,8 +114,9 @@ def create_composition(
             absent → mock adapter.
 
     Returns:
-        A frozen :class:`Composition` instance with all PR3 adapters
-        wired (embedding, vector_store, llm) plus the preindex use case.
+        A frozen :class:`Composition` instance with all 001-bootstrap
+        PR3 adapters wired plus the preindex use case and the two
+        002-mcp-tools PR1 read-only tool use cases.
 
     Raises:
         ManifestError: when the manifest is missing or fails schema
@@ -175,6 +171,17 @@ def create_composition(
         audit=audit,
     )
 
+    # 002-mcp-tools PR1: ``list_projects`` MCP tool use case. No LLM
+    # call; just manifest + optional vector_store for chunk counts.
+    # The search use case lands in a separate commit (keeps the
+    # RED/GREEN cycle clean per work-unit-commits).
+    list_projects_use_case = ListProjectsUseCase(
+        manifest=manifest,
+        vector_store=vector_store,
+        sanitizer=sanitizer,
+        audit=audit,
+    )
+
     return Composition(
         config=config,
         manifest=manifest,
@@ -186,8 +193,8 @@ def create_composition(
         audit=audit,
         sanitizer=sanitizer,
         preindex_use_case=preindex_use_case,
-        search_use_case=None,  # 002-mcp-tools
-        list_projects_use_case=None,  # 002-mcp-tools
+        list_projects_use_case=list_projects_use_case,
+        search_use_case=None,  # 002-mcp-tools PR1 — lands in next commit
     )
 
 

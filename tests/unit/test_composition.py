@@ -71,11 +71,24 @@ class TestCompositionDataclass:
         assert comp.preindex_use_case is not None
         assert comp.llm is not None
 
-    def test_all_002_placeholders_are_none(self) -> None:
-        """Search/list-projects use cases are None in PR1 (real ones in 002-mcp-tools)."""
+    def test_002_pr1_list_projects_use_case_is_wired(self) -> None:
+        """002-mcp-tools PR1 wires ``list_projects_use_case`` as a real instance.
+
+        ``search_use_case`` lands in a separate 002-mcp-tools PR1 commit
+        (keeps the RED/GREEN cycle per use case). The remaining four
+        MCP tool use cases and the Pydantic AI ``Agent`` land in PR2 / PR3.
+        """
+        from mcp_server.application.use_cases.list_projects import (
+            ListProjectsUseCase,
+        )
+
+        comp = create_composition(AppConfig())
+        assert isinstance(comp.list_projects_use_case, ListProjectsUseCase)
+
+    def test_002_search_use_case_still_a_placeholder(self) -> None:
+        """``search_use_case`` stays ``None`` until the PR1 search commit lands."""
         comp = create_composition(AppConfig())
         assert comp.search_use_case is None
-        assert comp.list_projects_use_case is None
 
 
 class TestCreateComposition:

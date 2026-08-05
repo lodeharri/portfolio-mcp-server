@@ -294,13 +294,16 @@ class TestSanitizerEmitsAuditOnRedaction:
         manifest = _FakeManifestPort(
             [_project(id="x", description="AKIAIOSFODNN7EXAMPLE leaked")]
         )
-        # Real audit logger → real JSON-line emission on stdout.
+        # Real audit logger + real sanitizer wired with the audit
+        # (this is what composition.py does in production).
+        audit = AuditLogger()
+        sanitizer = OutputSanitizer(audit=audit)
         from mcp_server.application.use_cases.list_projects import ListProjectsUseCase
 
         uc = ListProjectsUseCase(
             manifest=manifest,
-            sanitizer=OutputSanitizer(),
-            audit=AuditLogger(),
+            sanitizer=sanitizer,
+            audit=audit,
         )
 
         uc.execute()

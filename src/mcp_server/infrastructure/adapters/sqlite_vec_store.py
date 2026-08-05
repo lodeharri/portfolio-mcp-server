@@ -209,6 +209,26 @@ class SqliteVecStore:
             )
         return results
 
+    def count_by_project(self, project_id: str) -> int:
+        """Return the number of indexed chunks for ``project_id``.
+
+        O(N) over the ``code_chunks`` table (no dedicated index yet —
+        002-mcp-tools PR1 scope). The ``list_projects`` tool calls this
+        once per declared project; for the demo (2 projects, <10K
+        chunks each) the cost is negligible. A future optimization
+        could add a composite index on ``(project_id, chunk_hash)``.
+
+        Returns ``0`` for an unknown project — never raises.
+        """
+        cur = self._conn.execute(
+            "SELECT COUNT(*) FROM code_chunks WHERE project_id = ?",
+            (project_id,),
+        )
+        row = cur.fetchone()
+        if row is None:
+            return 0
+        return int(row[0])
+
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------

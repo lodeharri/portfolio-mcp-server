@@ -59,5 +59,17 @@ class VectorStorePort(Protocol):
         """
         ...
 
+    def count_by_project(self, project_id: str) -> int:
+        """Return the number of indexed chunks for ``project_id``.
+
+        Used by the ``list_projects`` MCP tool to surface
+        ``index_chunk_count`` per declared project. Implementations
+        MUST return ``0`` when no chunks exist for the project (not
+        raise). Implementations MUST be O(1) or at most O(log N) on
+        the ``code_chunks`` index — the call is on the hot path of
+        every ``list_projects`` invocation.
+        """
+        ...
+
 
 __all__ = ["VectorStorePort"]

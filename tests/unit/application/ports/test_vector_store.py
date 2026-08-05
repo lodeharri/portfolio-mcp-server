@@ -68,6 +68,9 @@ class TestVectorStorePortConformance:
             def search(self, query_vector: list[float], limit: int = 10) -> list:
                 return []
 
+            def count_by_project(self, project_id: str) -> int:
+                return 0
+
         fake = FakeVectorStore()
         assert isinstance(fake, VectorStorePort)
 
@@ -84,6 +87,9 @@ class TestVectorStorePortConformance:
 
             def search(self, query_vector: list[float], limit: int = 10) -> list:
                 return []
+
+            def count_by_project(self, project_id: str) -> int:
+                return 0
 
         store = FakeVectorStore()
         assert store.has_hash("missing") is False
