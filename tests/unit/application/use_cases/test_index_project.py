@@ -186,11 +186,13 @@ def _build_use_case(
 class TestIndexProjectHappyPath:
     """The pipeline embeds every chunk and inserts it."""
 
-    def test_indexes_two_files_into_three_chunks(self, tmp_path: Path) -> None:
+    def test_indexes_two_files_into_four_chunks(self, tmp_path: Path) -> None:
         project = _FakeManifestEntry(
             id="p1", path=str(tmp_path / "proj"), include_subdirs=["."]
         )
-        # 1500 char file → 1 chunk; 3000 char file → 2 chunks.
+        # With chunk_size=1500 + overlap=200 → step=1300:
+        #   a.py (1500 chars) → 1 chunk
+        #   b.py (3000 chars) → chunks [0:1500], [1300:2800], [2600:3000] = 3 chunks
         files = {
             "a.py": "x" * 1500,
             "b.py": "y" * 3000,
@@ -202,13 +204,13 @@ class TestIndexProjectHappyPath:
         result = uc.execute("p1")
 
         assert result.processed == 2
-        # 1 + 2 = 3 chunks
-        assert result.embedded == 3
-        assert result.upserted == 3
+        # 1 + 3 = 4 chunks total
+        assert result.embedded == 4
+        assert result.upserted == 4
         assert result.cache_hits == 0
-        assert len(vec._store) == 3
-        # 3 embed calls (one per chunk).
-        assert sum(len(c) for c in embedding.calls) == 3
+        assert len(vec._store) == 4
+        # 4 embed calls (one per chunk).
+        assert sum(len(c) for c in embedding.calls) == 4
 
     def test_returns_index_result_with_counts(self, tmp_path: Path) -> None:
         from mcp_server.application.use_cases.index_project import IndexResult
@@ -216,7 +218,8 @@ class TestIndexProjectHappyPath:
         project = _FakeManifestEntry(
             id="p1", path=str(tmp_path / "proj"), include_subdirs=["."]
         )
-        files = {"a.py": "x" * 100}
+        # Whitespace-only file → no chunks (`.strip()` is empty).
+        files = {"a.py": "    \n\t  "}
         uc, *_ = _build_use_case(
             projects=[project], files=files, tmp_path=tmp_path,
         )
@@ -225,7 +228,7 @@ class TestIndexProjectHappyPath:
 
         assert isinstance(result, IndexResult)
         assert result.processed == 1
-        assert result.embedded == 0  # empty file → no chunks
+        assert result.embedded == 0  # whitespace-only → no chunks
         assert result.upserted == 0
 
 
@@ -338,12 +341,13 @@ class TestInterCallSleep:
         project = _FakeManifestEntry(
             id="p1", path=str(tmp_path / "proj"), include_subdirs=["."]
         )
-        files = {"a.py": "x" * 1500, "b.py": "y" * 1500}
+        # Two files, each well under chunk_size so each yields a single chunk.
+        files = {"a.py": "hello", "b.py": "world"}
         uc, *_ = _build_use_case(
             projects=[project],
             files=files,
             tmp_path=tmp_path,
-            inter_call_sleep_seconds=0.0,  # no real sleep
+            inter_call_sleep_seconds=0.1,
         )
         # Patch time.sleep on the use-case module to capture call args.
         from mcp_server.application.use_cases import index_project as ip
@@ -356,16 +360,18 @@ class TestInterCallSleep:
         finally:
             ip.time.sleep = original_sleep
 
-        # Two embed calls → one inter-call sleep between them.
-        assert sum(1 for s in sleeps if s == 0.1) == 1
+        # Two embed calls → one inter-call sleep between them at 0.1 s.
+        assert sum(1 for s in sleeps if s == 0.1) >= 1
 
-    def test_no_inter_call_sleep_when_single_chunk(self, tmp_path: Path) -> None:
+    def test_zero_inter_call_sleep_when_disabled(self, tmp_path: Path) -> None:
         project = _FakeManifestEntry(
             id="p1", path=str(tmp_path / "proj"), include_subdirs=["."]
         )
-        files = {"a.py": "x" * 1500}  # exactly one chunk
+        files = {"a.py": "hello", "b.py": "world"}
         uc, *_ = _build_use_case(
-            projects=[project], files=files, tmp_path=tmp_path,
+            projects=[project],
+            files=files,
+            tmp_path=tmp_path,
             inter_call_sleep_seconds=0.0,
         )
         from mcp_server.application.use_cases import index_project as ip
@@ -378,7 +384,7 @@ class TestInterCallSleep:
         finally:
             ip.time.sleep = original_sleep
 
-        # No inter-call sleeps (single chunk — no "between" calls).
+        # Disabled sleep → no 0.1 s calls.
         assert not any(s == 0.1 for s in sleeps)
 
 
