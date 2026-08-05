@@ -56,7 +56,9 @@ class TestGitleaksScannerExitCodeMapping:
         scanner = GitleaksScanner()
         with (
             patch("shutil.which", return_value="/usr/local/bin/gitleaks"),
-            patch("subprocess.run", return_value=_completed_process(0)) as mock_run,
+            patch(
+                "subprocess.run", return_value=_completed_process(0, stdout="[]")
+            ) as mock_run,
         ):
             verdict = scanner.scan("hello world", source=str(tmp_path / "x.py"))
         assert verdict == ScanVerdict.CLEAN
@@ -69,7 +71,14 @@ class TestGitleaksScannerExitCodeMapping:
         with (
             patch("shutil.which", return_value="/usr/local/bin/gitleaks"),
             patch(
-                "subprocess.run", return_value=_completed_process(1, stdout='{"findings": [...]}')
+                "subprocess.run",
+                return_value=_completed_process(
+                    1,
+                    stdout=(
+                        '[{"Description":"AWS","Secret":"AKIA1234567890ABCDEF",'
+                        '"File":"x.py","StartLine":1,"EndLine":1}]'
+                    ),
+                ),
             ),
         ):
             verdict = scanner.scan("AKIA1234567890ABCDEF", source=str(tmp_path / "x.py"))
@@ -82,7 +91,16 @@ class TestGitleaksScannerExitCodeMapping:
         scanner = GitleaksScanner()
         with (
             patch("shutil.which", return_value="/usr/local/bin/gitleaks"),
-            patch("subprocess.run", return_value=_completed_process(2)),
+            patch(
+                "subprocess.run",
+                return_value=_completed_process(
+                    2,
+                    stdout=(
+                        '[{"Description":"maybe-secret","File":"x.py",'
+                        '"StartLine":1,"EndLine":1}]'
+                    ),
+                ),
+            ),
         ):
             verdict = scanner.scan("maybe-a-secret", source=str(tmp_path / "x.py"))
         assert verdict == ScanVerdict.FLAGGED

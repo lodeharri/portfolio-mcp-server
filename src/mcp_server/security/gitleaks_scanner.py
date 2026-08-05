@@ -29,6 +29,7 @@ Threat-matrix coverage
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import tempfile
@@ -133,6 +134,19 @@ class GitleaksScanner:
                 self._emit_audit("secret.timeout", source=source)
                 return ScanVerdict.BLOCKED
 
+        # Validate stdout shape BEFORE trusting the exit code. Per the
+        # security-layers spec an exit code by itself is NOT proof of a
+        # well-formed scan: a malformed JSON payload or empty stdout
+        # MUST be treated as fail-closed ``BLOCKED`` rather than
+        # ``CLEAN``.
+        if not self._is_valid_scan_output(result.stdout):
+            self._emit_audit(
+                "secret.malformed_output",
+                source=source,
+                exit_code=result.returncode,
+            )
+            return ScanVerdict.BLOCKED
+
         verdict = self._map_exit_code(result.returncode)
         if verdict is ScanVerdict.BLOCKED and result.returncode != 1:
             self._emit_audit("secret.blocked", source=source, exit_code=result.returncode)
@@ -141,6 +155,24 @@ class GitleaksScanner:
         elif verdict is ScanVerdict.FLAGGED:
             self._emit_audit("secret.flagged", source=source, exit_code=2)
         return verdict
+
+    @staticmethod
+    def _is_valid_scan_output(stdout: str) -> bool:
+        """Return True iff ``stdout`` is a parseable gitleaks JSON payload.
+
+        Gitleaks emits a JSON array of findings on stdout. An empty
+        ``[]`` is the well-formed "no findings" case. Anything else
+        (empty string, non-JSON text, partial JSON, an object that is
+        not a list) is treated as malformed and the caller MUST
+        fail-closed.
+        """
+        if not stdout or not stdout.strip():
+            return False
+        try:
+            parsed = json.loads(stdout)
+        except json.JSONDecodeError:
+            return False
+        return isinstance(parsed, list)
 
     @staticmethod
     def _map_exit_code(returncode: int) -> ScanVerdict:
