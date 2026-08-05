@@ -252,3 +252,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 def cli(argv: Sequence[str] | None = None) -> int:
     """Console-script entry point — returns the exit code."""
     return main(argv)
+
+
+if __name__ == "__main__":
+    import sys
+
+    sys.exit(cli())
