@@ -136,3 +136,58 @@ class TestCompositionManifestLoadedEndToEnd:
         # A path clearly outside any declared project returns False.
         unrelated = Path("/tmp/this-path-does-not-exist-anywhere.py")  # noqa: S108
         assert comp.manifest.is_path_indexed(unrelated) is False
+
+
+class TestCompositionFailsFastOnMissingManifest:
+    """``create_composition`` propagates manifest errors at startup.
+
+    Pre-PR2 fix: the composition root constructed ``YamlManifestAdapter``
+    lazily and never called ``load()``. A missing manifest returned a
+    :class:`Composition` whose ``manifest`` was an unloaded adapter; the
+    failure surfaced only when the first request walked the index. The
+    spec requires fail-fast on startup so the preindex pipeline aborts
+    with a non-zero exit code (task 2.14 + ADR-001 eager wiring).
+    """
+
+    def test_missing_manifest_path_raises_manifest_not_found(self, tmp_path) -> None:
+        from mcp_server.domain.exceptions import ManifestNotFoundError
+
+        missing = tmp_path / "no-such-manifest.yaml"
+        config = AppConfig(manifest_path=missing)
+        with pytest.raises(ManifestNotFoundError):
+            create_composition(config)
+
+    def test_invalid_manifest_schema_raises_manifest_schema_error(self, tmp_path) -> None:
+        from mcp_server.domain.exceptions import ManifestSchemaError
+
+        bad = tmp_path / "bad.yaml"
+        bad.write_text("schema_version: 1\n")
+        config = AppConfig(manifest_path=bad)
+        with pytest.raises(ManifestSchemaError):
+            create_composition(config)
+
+    def test_manifest_with_no_projects_raises_manifest_schema_error(self, tmp_path) -> None:
+        """A manifest missing ``projects`` MUST fail at startup.
+
+        Layer 1 default-deny requires at least one declared project. If
+        ``create_composition`` accepted such a manifest, the preindex
+        pipeline would boot with no scope and silently index nothing.
+        """
+        from mcp_server.domain.exceptions import ManifestSchemaError
+
+        manifest_path = tmp_path / "no-projects.yaml"
+        manifest_path.write_text(
+            "schema_version: 1\n"
+            "server:\n"
+            "  name: portfolio-mcp-server\n"
+            "  version: 0.1.0\n"
+            "  description: test\n"
+            "indexing:\n"
+            "  default_policy: deny\n"
+            "  chunk_size: 1500\n"
+            "  chunk_overlap: 200\n"
+            "# no projects:\n"
+        )
+        config = AppConfig(manifest_path=manifest_path)
+        with pytest.raises(ManifestSchemaError):
+            create_composition(config)
