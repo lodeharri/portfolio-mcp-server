@@ -33,20 +33,32 @@ class TestCompositionDataclass:
         comp = create_composition(cfg)
         assert comp.config == cfg
 
-    def test_all_pr2_placeholders_are_none(self) -> None:
-        """Security adapter placeholders are None in PR1 (real adapters in PR2)."""
+    def test_all_pr2_security_adapters_are_wired(self) -> None:
+        """PR2 wires real security adapters (Layers 1, 2, 3, 5).
+
+        After PR2, the five security adapters MUST be real instances,
+        not ``None`` placeholders.
+        """
+        from mcp_server.infrastructure.adapters.yaml_manifest import (
+            YamlManifestAdapter,
+        )
+        from mcp_server.security.audit import AuditLogger
+        from mcp_server.security.gitleaks_scanner import GitleaksScanner
+        from mcp_server.security.output_sanitizer import OutputSanitizer
+        from mcp_server.security.rate_limiter import SlowapiRateLimiter
+
         comp = create_composition(AppConfig())
-        assert comp.manifest_port is None
-        assert comp.scanner_port is None
-        assert comp.rate_limiter is None
-        assert comp.audit is None
-        assert comp.sanitizer is None
+        assert isinstance(comp.manifest, YamlManifestAdapter)
+        assert isinstance(comp.secret_scanner, GitleaksScanner)
+        assert isinstance(comp.sanitizer, OutputSanitizer)
+        assert isinstance(comp.rate_limiter, SlowapiRateLimiter)
+        assert isinstance(comp.audit, AuditLogger)
 
     def test_all_pr3_placeholders_are_none(self) -> None:
         """Preindex adapter placeholders are None in PR1 (real adapters in PR3)."""
         comp = create_composition(AppConfig())
-        assert comp.embedding_port is None
-        assert comp.vector_port is None
+        assert comp.embedding is None
+        assert comp.vector_store is None
         assert comp.preindex_use_case is None
 
     def test_all_002_placeholders_are_none(self) -> None:

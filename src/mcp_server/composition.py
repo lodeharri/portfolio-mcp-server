@@ -1,70 +1,82 @@
 """Composition root — DI container wiring adapters to use cases.
 
 This is the ONLY module in ``src/mcp_server/`` that imports both concrete
-adapters (``infrastructure/adapters/``) and use cases
+adapters (``infrastructure/adapters/`` and ``security/``) and use cases
 (``application/use_cases/``). See
 ``openspec/changes/001-bootstrap/design/adrs/001-composition-eager-vs-lazy.md``
 for the eager-wiring rationale (fail-fast, single source of truth, trivial
 hexagonal invariant enforcement).
 
 PR1 scope: this module exposes the :class:`Composition` dataclass with all
-adapter fields as ``None`` placeholders. Subsequent change-PRs replace them
-with real adapters:
+adapter fields as ``None`` placeholders.
 
-* PR2 (``security-layers``) — ``manifest_port``, ``scanner_port``,
-  ``sanitizer``, ``rate_limiter``, ``audit``
-* PR3 (``preindex-pipeline``) — ``embedding_port``, ``vector_port``,
-  ``preindex_use_case``
-* ``002-mcp-tools`` — ``search_use_case``, ``list_projects_use_case``
+PR2 (``security-layers``) wires the five security adapters:
+
+* ``manifest`` — :class:`YamlManifestAdapter` (Layer 1)
+* ``secret_scanner`` — :class:`GitleaksScanner` (Layer 2)
+* ``sanitizer`` — :class:`OutputSanitizer` (Layer 3, also wired as
+  middleware in ``interfaces/http/middleware/sanitizer.py``)
+* ``rate_limiter`` — :class:`SlowapiRateLimiter` (Layer 5)
+* ``audit`` — :class:`AuditLogger` (Layer 5)
+
+The remaining placeholders (``embedding``, ``vector_store``, ``llm``,
+``preindex_use_case``, ``search_use_case``, ``list_projects_use_case``)
+stay ``None`` until PR3 / 002-mcp-tools land.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Final
 
+from mcp_server.application.ports.embedding import EmbeddingPort
+from mcp_server.application.ports.llm import LLMPort
+from mcp_server.application.ports.manifest import ManifestPort
+from mcp_server.application.ports.rate_limiter import RateLimiterPort
+from mcp_server.application.ports.secret_scanner import SecretScannerPort
+from mcp_server.application.ports.vector_store import VectorStorePort
 from mcp_server.config import AppConfig, load_config
+from mcp_server.infrastructure.adapters.yaml_manifest import YamlManifestAdapter
+from mcp_server.security.audit import AuditLogger
+from mcp_server.security.gitleaks_scanner import GitleaksScanner
+from mcp_server.security.output_sanitizer import OutputSanitizer
+from mcp_server.security.rate_limiter import SlowapiRateLimiter
 
 
 @dataclass(frozen=True)
 class Composition:
     """The wired container — the output of ``create_composition()``.
 
-    Frozen so it cannot be mutated mid-request (ADR-001 follow-up). Each
-    field carries the wired adapter instance OR ``None`` when the adapter
-    has not yet been implemented (PR1 baseline).
+    Frozen so it cannot be mutated mid-request (ADR-001 follow-up).
+    Each field carries the wired adapter instance OR ``None`` when the
+    adapter has not yet been implemented (PR3 / 002-mcp-tools).
 
-    Fields (PR1 = all ``None`` for adapters not yet wired):
+    Fields:
 
     * ``config`` — typed :class:`AppConfig` (always populated)
-    * ``manifest_port`` — :class:`ManifestPort` — PR2
-    * ``embedding_port`` — :class:`EmbeddingPort` — PR3
-    * ``scanner_port`` — :class:`SecretScannerPort` — PR2
-    * ``vector_port`` — :class:`VectorStorePort` — PR3
-    * ``rate_limiter`` — :class:`RateLimiterPort` — PR2
-    * ``audit`` — :class:`AuditLogger` — PR2
-    * ``sanitizer`` — :class:`OutputSanitizer` — PR2
-    * ``preindex_use_case`` — :class:`PreindexUseCase` — PR3
-    * ``search_use_case`` — :class:`SearchCodeUseCase` — 002-mcp-tools
-    * ``list_projects_use_case`` — :class:`ListProjectsUseCase` — 002-mcp-tools
+    * ``manifest`` — :class:`ManifestPort` — PR2 (Layer 1)
+    * ``embedding`` — :class:`EmbeddingPort` — PR3
+    * ``secret_scanner`` — :class:`SecretScannerPort` — PR2 (Layer 2)
+    * ``vector_store`` — :class:`VectorStorePort` — PR3
+    * ``rate_limiter`` — :class:`RateLimiterPort` — PR2 (Layer 5)
+    * ``audit`` — :class:`AuditLogger` — PR2 (Layer 5)
+    * ``sanitizer`` — :class:`OutputSanitizer` — PR2 (Layer 3)
+    * ``preindex_use_case`` — PR3
+    * ``search_use_case`` — 002-mcp-tools
+    * ``list_projects_use_case`` — 002-mcp-tools
     """
 
     config: AppConfig
-    # The adapter fields are typed ``Any`` for now because importing the
-    # Protocol types would create forward references to modules that don't
-    # exist yet. Once PR2 introduces ``application/ports/*.py`` Protocols
-    # we tighten the annotations. Behavior is unaffected: each field is
-    # either an instance of its Protocol OR ``None``.
-    manifest_port: Any
-    embedding_port: Any
-    scanner_port: Any
-    vector_port: Any
-    rate_limiter: Any
-    audit: Any
-    sanitizer: Any
-    preindex_use_case: Any
-    search_use_case: Any
-    list_projects_use_case: Any
+    manifest: ManifestPort
+    embedding: EmbeddingPort | None
+    secret_scanner: SecretScannerPort
+    vector_store: VectorStorePort | None
+    llm: LLMPort | None
+    rate_limiter: RateLimiterPort
+    audit: AuditLogger
+    sanitizer: OutputSanitizer
+    preindex_use_case: object | None
+    search_use_case: object | None
+    list_projects_use_case: object | None
 
 
 def create_composition(config: AppConfig | None = None) -> Composition:
@@ -85,25 +97,35 @@ def create_composition(config: AppConfig | None = None) -> Composition:
     """
     if config is None:
         config = load_config()
+
+    # Eager wiring: construct every adapter up front so adapter init
+    # errors surface during create_app(), not at first request.
+    audit = AuditLogger()
+    manifest = YamlManifestAdapter(config.manifest_path)
+    secret_scanner = GitleaksScanner(audit=audit)
+    sanitizer = OutputSanitizer()
+    rate_limiter = SlowapiRateLimiter(limit="30/minute", audit=audit)
+
     return Composition(
         config=config,
-        manifest_port=None,
-        embedding_port=None,
-        scanner_port=None,
-        vector_port=None,
-        rate_limiter=None,
-        audit=None,
-        sanitizer=None,
-        preindex_use_case=None,
-        search_use_case=None,
-        list_projects_use_case=None,
+        manifest=manifest,
+        embedding=None,  # wired in PR3 (GeminiEmbeddingAdapter)
+        secret_scanner=secret_scanner,
+        vector_store=None,  # wired in PR3 (SqliteVecStore)
+        llm=None,  # wired in 002-mcp-tools (GeminiLLMAdapter)
+        rate_limiter=rate_limiter,
+        audit=audit,
+        sanitizer=sanitizer,
+        preindex_use_case=None,  # wired in PR3
+        search_use_case=None,  # wired in 002-mcp-tools
+        list_projects_use_case=None,  # wired in 002-mcp-tools
     )
 
 
 # Alias matching design.md and tasks.md. ``compose`` reads more naturally
 # inside the composition-root pattern; ``create_composition`` is the
 # explicit factory name requested by the PR1 orchestrator prompt.
-compose: Final = create_composition
+compose = create_composition
 
 
 __all__ = ["Composition", "compose", "create_composition"]
