@@ -191,3 +191,43 @@ class TestCompositionFailsFastOnMissingManifest:
         config = AppConfig(manifest_path=manifest_path)
         with pytest.raises(ManifestSchemaError):
             create_composition(config)
+
+
+class TestCompositionWiresSanitizerWithAudit:
+    """Composition injects the audit logger into the sanitizer.
+
+    This is the wiring the verify report flagged as missing: an
+    ``output.redacted`` event MUST be emitted whenever the sanitizer
+    redacts content. The composition root is the ONLY place where the
+    audit logger is shared with the sanitizer, so this test
+    complements the unit-level emission test in
+    ``tests/unit/security/test_output_sanitizer.py``.
+    """
+
+    def test_sanitizer_receives_audit_logger(self) -> None:
+        from mcp_server.security.audit import AuditLogger
+
+        comp = create_composition(AppConfig())
+        assert isinstance(comp.sanitizer._audit, AuditLogger)
+        assert comp.sanitizer._audit is comp.audit
+
+    def test_sanitizer_via_composition_emits_output_redacted(self, capsys) -> None:
+        """End-to-end audit emission: composition → sanitizer → audit."""
+        import json
+
+        comp = create_composition(AppConfig())
+        comp.sanitizer.sanitize(
+            "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE", source="tool-test"
+        )
+
+        out, _ = capsys.readouterr()
+        records = [
+            json.loads(line)
+            for line in out.splitlines()
+            if line.strip()
+        ]
+        # Find the output.redacted event among the captured events.
+        redacted = [r for r in records if r.get("event") == "output.redacted"]
+        assert len(redacted) == 1
+        assert redacted[0]["source"] == "tool-test"
+        assert "aws" in redacted[0]["patterns"]

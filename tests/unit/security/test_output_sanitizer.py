@@ -257,8 +257,9 @@ class TestOutputSanitizerEmitsRedactedAuditEvent:
         event, fields = captured[0]
         assert event == "output.redacted"
         assert fields["source"] == "tool-x"
-        assert fields["pattern"] == "aws"
         assert fields["count"] == 1
+        # ``patterns`` is a comma-separated string of matched pattern names.
+        assert "aws" in fields["patterns"]
 
     def test_multiple_patterns_emit_one_event_per_call(self) -> None:
         """One sanitize() call with multiple patterns produces ONE event.

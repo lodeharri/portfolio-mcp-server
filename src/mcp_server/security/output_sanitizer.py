@@ -13,6 +13,12 @@ The five patterns (per ``openspec/changes/001-bootstrap/specs/security-layers.md
 * ``GEMINI`` — ``AIza[0-9A-Za-z_-]{35}``
 * ``GENERIC`` — ``(api[_-]?key|secret|password|token)\\s*[:=]\\s*['\"]?[\\w-]+``
 
+Additionally, when an audit logger is injected at construction time,
+the sanitizer emits an ``output.redacted`` event for every successful
+``sanitize`` that returns at least one incident. This satisfies the
+Layer 5 audit contract at the Layer 3 boundary so T2.13 HTTP middleware
+(PR3) and the preindex use case don't need to repeat the audit call.
+
 Thread-safety: the compiled regexes live at MODULE LEVEL. Two sanitizer
 instances share the same compiled patterns, so concurrent sanitization
 across threads is safe (no per-instance mutable state).
@@ -24,6 +30,7 @@ import json
 import re
 from datetime import datetime, timezone
 from enum import Enum
+from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
 
@@ -104,6 +111,18 @@ class SanitizedOutput(BaseModel):
 _REDACTED_PLACEHOLDER = "[REDACTED]"
 
 
+class _AuditEmitter(Protocol):
+    """Protocol for the audit logger the sanitizer talks to.
+
+    Kept local to this module so the sanitizer does not import the
+    :class:`AuditLogger` from ``mcp_server.security.audit`` (which would
+    create a circular dependency: ``audit`` already imports the
+    sanitizer for its ``source`` field sanitization).
+    """
+
+    def warn(self, event: str, **fields: Any) -> None: ...
+
+
 class OutputSanitizer:
     """Replace every ``SecretPattern`` match in ``text`` with ``[REDACTED]``.
 
@@ -111,7 +130,20 @@ class OutputSanitizer:
     instantiation is just an attribute assignment. Two instances are
     fully interchangeable; both can be used concurrently from
     different threads.
+
+    The optional ``audit`` argument wires the Layer 5 audit emission
+    required by the spec ("Every redaction, every blocked scan, and
+    every rate-limit hit MUST be logged"). When injected, every
+    ``sanitize`` call that returns at least one incident raises
+    ``audit.warn("output.redacted", ...)`` with the matched pattern
+    names, the redaction count, and the source label. When ``audit``
+    is ``None`` (e.g. unit tests, CLI helpers) the sanitizer still
+    redacts but stays silent — the redaction itself is the security
+    boundary, the audit is the observability layer.
     """
+
+    def __init__(self, audit: _AuditEmitter | None = None) -> None:
+        self._audit = audit
 
     def sanitize(self, text: str, source: str) -> SanitizedOutput:
         """Redact secrets from ``text``.
@@ -148,6 +180,20 @@ class OutputSanitizer:
                 return _REDACTED_PLACEHOLDER
 
             redacted = regex.sub(_sub_and_record, redacted)
+
+        if incidents and self._audit is not None:
+            # Aggregate the matched patterns + count so the audit log
+            # doesn't flood on find-heavy payloads. The Layer 5 audit
+            # contract is "every redaction is logged"; one event per
+            # sanitize call satisfies that contract without N events
+            # for N matches.
+            unique_patterns = sorted({i.pattern.value for i in incidents})
+            self._audit.warn(
+                "output.redacted",
+                source=source,
+                count=len(incidents),
+                patterns=",".join(unique_patterns),
+            )
 
         return SanitizedOutput(redacted_text=redacted, incidents=incidents)
 

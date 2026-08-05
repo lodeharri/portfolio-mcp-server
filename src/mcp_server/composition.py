@@ -111,7 +111,11 @@ def create_composition(config: AppConfig | None = None) -> Composition:
     # inspectable Composition error path.
     manifest.load()
     secret_scanner = GitleaksScanner(audit=audit)
-    sanitizer = OutputSanitizer()
+    # The sanitizer is wired with the audit logger so every redaction
+    # emits an ``output.redacted`` event at the Layer 3 boundary.
+    # T2.13 HTTP middleware (PR3) and the preindex use case share the
+    # same sanitizer instance and inherit the audit emission.
+    sanitizer = OutputSanitizer(audit=audit)
     rate_limiter = SlowapiRateLimiter(limit="30/minute", audit=audit)
 
     return Composition(
