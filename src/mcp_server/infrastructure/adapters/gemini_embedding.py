@@ -46,15 +46,14 @@ from typing import Final, Protocol
 from google import genai
 from google.genai import types
 
-from mcp_server.application.ports.embedding import EmbeddingPort
 from mcp_server.domain.exceptions import GeminiPermanentError, GeminiTransientError
 
 __all__ = [
-    "MockEmbeddingAdapter",
-    "GeminiEmbeddingAdapter",
-    "MAX_ATTEMPTS",
     "BASE_DELAY",
+    "MAX_ATTEMPTS",
     "MAX_DELAY",
+    "GeminiEmbeddingAdapter",
+    "MockEmbeddingAdapter",
 ]
 
 # ---------------------------------------------------------------------------
@@ -73,7 +72,7 @@ DEFAULT_EMBEDDING_MODEL: Final[str] = "text-embedding-004"  # 768-dim, free tier
 # ---------------------------------------------------------------------------
 
 
-def _build_genai_client(api_key: str) -> "genai.Client":
+def _build_genai_client(api_key: str) -> genai.Client:
     """Build a real ``google.genai.Client`` for production use.
 
     The new SDK uses a stateless client created once with the API key;
@@ -193,7 +192,7 @@ class GeminiEmbeddingAdapter:
                 return self._extract_single(response)
             except GeminiPermanentError:
                 raise  # propagates without retry
-            except Exception as exc:  # noqa: BLE001 — broad catch by design
+            except Exception as exc:
                 status = _status_from_exception(exc)
                 if status is not None and 400 <= status < 500 and status != 429:
                     # Fail fast on 4xx (except 429 which is retryable).

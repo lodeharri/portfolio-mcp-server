@@ -27,9 +27,10 @@ CLI summary line can be machine-readable.
 from __future__ import annotations
 
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from mcp_server.application.ports.embedding import EmbeddingPort
 from mcp_server.application.ports.secret_scanner import ScanVerdict, SecretScannerPort
@@ -149,7 +150,6 @@ class IndexProjectUseCase:
             :class:`IndexResult` with the per-run counters. The CLI
             renders this as a JSON line on stdout.
         """
-        from mcp_server.domain.entities import CodeChunk
 
         result = IndexResult()
         project = self._find_project(project_id)
@@ -237,7 +237,7 @@ class IndexProjectUseCase:
                 )
                 try:
                     self.vector_store.upsert([chunk_to_persist])
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     result.errors.append(exc)
                     self._audit(
                         "warn",
@@ -276,7 +276,7 @@ class IndexProjectUseCase:
 
     def _walk_project(self, project: object) -> Iterable[Path]:
         """Walk the project root, honoring ``is_path_indexed`` (Layer 1)."""
-        project_path = Path(getattr(project, "path"))
+        project_path = Path(project.path)
         # Layer 1: only walk the project's declared ``include_subdirs``.
         include = getattr(project, "include_subdirs", None) or ["."]
         for sub in include:

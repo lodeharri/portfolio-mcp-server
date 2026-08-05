@@ -66,7 +66,7 @@ __all__ = [
     "PreindexExitCode",
     "SchemaError",
     "VectorStoreError",
-] 
+]
 
 
 # ---------------------------------------------------------------------------
@@ -163,7 +163,7 @@ class PreindexError(DomainError):
         self,
         message: str,
         *,
-        exit_code: "PreindexExitCode | None" = None,
+        exit_code: PreindexExitCode | None = None,
     ) -> None:
         super().__init__(message)
         self.exit_code = exit_code

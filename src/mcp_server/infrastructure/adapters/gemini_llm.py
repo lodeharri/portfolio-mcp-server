@@ -32,12 +32,11 @@ from typing import Final, Protocol
 from google import genai
 from google.genai import types
 
-from mcp_server.application.ports.llm import LLMPort
 from mcp_server.domain.exceptions import GeminiPermanentError, GeminiTransientError
 
 __all__ = [
-    "MAX_ATTEMPTS",
     "BASE_DELAY",
+    "MAX_ATTEMPTS",
     "MAX_DELAY",
     "GeminiLlmAdapter",
     "MockLlmAdapter",
@@ -58,7 +57,7 @@ DEFAULT_MODEL: Final[str] = "gemini-2.0-flash"
 # ---------------------------------------------------------------------------
 
 
-def _build_genai_client(api_key: str) -> "genai.Client":
+def _build_genai_client(api_key: str) -> genai.Client:
     """Build a real ``google.genai.Client`` for production use.
 
     The new SDK uses a stateless client created once with the API key;
@@ -177,7 +176,7 @@ class GeminiLlmAdapter:
                 return self._extract_text(response)
             except GeminiPermanentError:
                 raise
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 status = _status_from_exception(exc)
                 if status is not None and 400 <= status < 500 and status != 429:
                     raise GeminiPermanentError(

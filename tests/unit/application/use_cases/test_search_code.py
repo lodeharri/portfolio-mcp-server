@@ -36,7 +36,6 @@ from mcp_server.domain.exceptions import GeminiTransientError
 from mcp_server.security.audit import AuditLogger
 from mcp_server.security.output_sanitizer import OutputSanitizer
 
-
 # ---------------------------------------------------------------------------
 # Fakes
 # ---------------------------------------------------------------------------
@@ -47,7 +46,7 @@ def _hash_vector(text: str, dim: int = 768) -> list[float]:
     out: list[float] = []
     counter = 0
     while len(out) < dim:
-        chunk = hashlib.sha256(f"{text}:{counter}".encode("utf-8")).digest()
+        chunk = hashlib.sha256(f"{text}:{counter}".encode()).digest()
         for i in range(0, 16, 4):
             out.append(int.from_bytes(chunk[i : i + 4], "big") / 2**32)
         counter += 1
@@ -105,7 +104,7 @@ class _FakeVectorStore:
 def _result(
     *,
     chunk_hash: str,
-    file_path: str = "/tmp/example.py",
+    file_path: str = "/example.py",
     content: str = "pass",
     score: float = 0.1,
     project_id: str = "finance-coach-latam",
@@ -171,7 +170,7 @@ class TestQueryIsEmbeddedThenSearched:
         assert len(out) == 3
         # Order is preserved from the store (pre-sorted ascending).
         assert [r["chunk_hash"] for r in out] == ["a" * 64, "b" * 64, "c" * 64]
-        assert all(r["score"] == s for r, s in zip(out, [0.10, 0.20, 0.30]))
+        assert all(r["score"] == s for r, s in zip(out, [0.10, 0.20, 0.30], strict=True))
 
     def test_calls_embed_then_search(self) -> None:
         embedding = _FakeEmbedding(vectors={"q": _hash_vector("q")})
@@ -198,7 +197,10 @@ class TestQueryIsEmbeddedThenSearched:
 
         assert len(out) == 1
         r = out[0]
-        for field in ("chunk_hash", "file_path", "line_start", "line_end", "content", "score", "project_id"):
+        for field in (
+        "chunk_hash", "file_path", "line_start", "line_end",
+        "content", "score", "project_id",
+    ):
             assert field in r
 
     def test_empty_query_raises_value_error(self) -> None:
@@ -356,7 +358,7 @@ class TestOutputSanitization:
         results = [
             _result(
                 chunk_hash="a" * 64,
-                file_path="/tmp/example.py",
+                file_path="/example.py",
                 line_start=10,
                 line_end=20,
                 score=0.123,
@@ -371,7 +373,7 @@ class TestOutputSanitization:
 
         r = out[0]
         assert r["chunk_hash"] == "a" * 64
-        assert r["file_path"] == "/tmp/example.py"
+        assert r["file_path"] == "/example.py"
         assert r["line_start"] == 10
         assert r["line_end"] == 20
         assert r["score"] == 0.123

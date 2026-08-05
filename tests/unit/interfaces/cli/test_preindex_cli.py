@@ -25,13 +25,9 @@ Exit codes map to :class:`PreindexExitCode`:
 
 from __future__ import annotations
 
-import os
-import sys
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Argparse contract
@@ -228,13 +224,13 @@ class TestProjectIdSelection:
     def test_runs_all_projects_when_no_project_id(
         self, tmp_path, monkeypatch
     ) -> None:
-        from mcp_server.interfaces.cli import preindex
-
         # We can't easily call cli() multiple times in this test because
         # we don't want to depend on real CLI parsing; just verify the
         # structure — when --project-id is absent, the use case is
         # invoked per declared project.
         import inspect
+
+        from mcp_server.interfaces.cli import preindex
 
         src = inspect.getsource(preindex)
         # The CLI iterates `manifest.projects()` when no project filter.

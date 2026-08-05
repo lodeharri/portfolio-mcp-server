@@ -23,7 +23,6 @@ import json
 from typing import Any
 
 import pytest
-import structlog
 
 
 def _capture_stdout(capture_fn) -> list[dict[str, Any]]:
@@ -78,10 +77,7 @@ def app_with_secret_route():
     Uses the production ``create_app()`` and adds a test route at /echo.
     """
     from fastapi import FastAPI, Request
-    from fastapi.testclient import TestClient
 
-    from mcp_server.composition import create_composition
-    from mcp_server.config import AppConfig
     from mcp_server.interfaces.http.middleware.sanitizer import (
         OutputSanitizerMiddleware,
     )

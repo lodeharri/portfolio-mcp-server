@@ -28,8 +28,6 @@ Tests assert:
 
 from __future__ import annotations
 
-import enum
-
 import pytest
 
 
@@ -141,9 +139,9 @@ class TestPreindexExceptionAndExitCode:
         assert issubclass(PreindexError, McpServerError)
 
     def test_preindex_exit_code_is_an_enum(self) -> None:
-        from mcp_server.domain.exceptions import PreindexExitCode
-
         import enum as _enum
+
+        from mcp_server.domain.exceptions import PreindexExitCode
 
         assert issubclass(PreindexExitCode, _enum.Enum)
 

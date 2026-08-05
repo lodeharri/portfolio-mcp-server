@@ -32,5 +32,4 @@ mcp: FastMCP = FastMCP("mcp-server-playground")
 # container via ``tools.set_use_cases(...)``.
 from mcp_server.interfaces.mcp import tools as _tools  # noqa: E402, F401
 
-
 __all__ = ["mcp"]

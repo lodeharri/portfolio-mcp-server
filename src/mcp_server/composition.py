@@ -199,7 +199,7 @@ def create_composition(
     # cases and the tools module are importable; doing it here keeps
     # the wiring in a single place (ADR-001 + composition root
     # discipline).
-    from mcp_server.interfaces.mcp import tools as _tools  # noqa: E402
+    from mcp_server.interfaces.mcp import tools as _tools
 
     _tools.set_use_cases(
         list_projects_uc=list_projects_use_case,
@@ -243,9 +243,9 @@ compose = create_composition
 
 __all__ = [
     "Composition",
+    "PreindexExitCode",  # re-export for legacy callers
     "compose",
     "create_composition",
-    "PreindexExitCode",  # re-export for legacy callers
 ]
 
 # Re-export so CLI imports ``PreindexExitCode`` from composition if it

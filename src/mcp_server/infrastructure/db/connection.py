@@ -87,7 +87,7 @@ def open_db(path: str | Path) -> sqlite3.Connection:
     conn = sqlite3.connect(str(db_path))
     try:
         sqlite_vec.load(conn)
-    except Exception as exc:  # noqa: BLE001 — surface as SchemaError
+    except Exception as exc:
         conn.close()
         raise SchemaError(f"failed to load sqlite-vec extension: {exc}") from exc
 

@@ -33,7 +33,7 @@ from pydantic import BaseModel, Field
 # domain-driven-design principle that entities belong in domain/.
 # This re-export keeps PR2 callers (and the YAML adapter) working
 # without import-path churn.
-from mcp_server.domain.entities import Project  # noqa: F401
+from mcp_server.domain.entities import Project
 
 
 class Manifest(BaseModel):

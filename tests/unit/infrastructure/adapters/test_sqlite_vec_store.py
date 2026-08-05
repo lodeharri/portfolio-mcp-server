@@ -37,7 +37,7 @@ def _make_chunk(
     embedding: list[float] | None = None,
     embedding_dim: int = 768,
     flagged: bool = False,
-) -> "CodeChunk":
+) -> CodeChunk:
     from mcp_server.domain.entities import CodeChunk
 
     return CodeChunk(
@@ -153,7 +153,7 @@ class TestUpsert:
                 content="def hello(): pass",
             )
             store.upsert([chunk])
-            cur = store._conn.execute(  # noqa: SLF001
+            cur = store._conn.execute(
                 "SELECT chunk_hash, project_id, flagged FROM code_chunks WHERE chunk_hash=?",
                 (chunk.chunk_hash,),
             )
@@ -174,7 +174,7 @@ class TestUpsert:
         try:
             chunk = _make_chunk(chunk_hash="b" * 64)
             store.upsert([chunk])
-            cur = store._conn.execute(  # noqa: SLF001
+            cur = store._conn.execute(
                 "SELECT chunk_hash FROM vec_chunks_768 WHERE chunk_hash=?",
                 (chunk.chunk_hash,),
             )
@@ -193,7 +193,7 @@ class TestUpsert:
             chunk = _make_chunk(chunk_hash="c" * 64)
             store.upsert([chunk])
             store.upsert([chunk])
-            cur = store._conn.execute(  # noqa: SLF001
+            cur = store._conn.execute(
                 "SELECT count(*) FROM code_chunks WHERE chunk_hash=?",
                 (chunk.chunk_hash,),
             )
@@ -211,7 +211,7 @@ class TestUpsert:
         try:
             chunk = _make_chunk(chunk_hash="d" * 64, flagged=True)
             store.upsert([chunk])
-            cur = store._conn.execute(  # noqa: SLF001
+            cur = store._conn.execute(
                 "SELECT flagged FROM code_chunks WHERE chunk_hash=?",
                 (chunk.chunk_hash,),
             )

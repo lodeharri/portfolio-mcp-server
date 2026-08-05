@@ -38,10 +38,10 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
-from mcp_server.config import AppConfig, load_config
+from mcp_server.config import load_config
 from mcp_server.domain.exceptions import (
     DomainError,
     GeminiTransientError,
@@ -189,7 +189,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except ManifestError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return PreindexExitCode.MANIFEST_ERROR.value
-    except Exception as exc:  # noqa: BLE001 — DB open failures land here too
+    except Exception as exc:
         # Distinguish a DB failure (exit 5) from anything else (exit 5 too,
         # since it's still a "preindex cannot run" condition).
         print(f"ERROR: failed to assemble composition: {exc}", file=sys.stderr)
@@ -227,7 +227,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         except DomainError as exc:
             print(f"ERROR: pipeline failed: {exc}", file=sys.stderr)
             return PreindexExitCode.MANIFEST_ERROR.value
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             print(f"ERROR: pipeline failed: {exc}", file=sys.stderr)
             return PreindexExitCode.DB_ERROR.value
 

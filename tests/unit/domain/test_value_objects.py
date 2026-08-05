@@ -20,7 +20,6 @@ from __future__ import annotations
 import hashlib
 
 import pytest
-from pydantic import ValidationError
 
 # ---------------------------------------------------------------------------
 # ChunkHash
@@ -72,7 +71,7 @@ class TestChunkHashContract:
         """
         from mcp_server.domain.value_objects import compute_chunk_hash
 
-        canonical = f"p|/tmp/foo.py|0|768|x = 1"
+        canonical = "p|/tmp/foo.py|0|768|x = 1"
         expected = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
         actual = compute_chunk_hash(
             project_id="p",

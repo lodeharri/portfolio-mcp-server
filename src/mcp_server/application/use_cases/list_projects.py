@@ -142,5 +142,5 @@ class ListProjectsUseCase:
             return 0
         try:
             return int(self.vector_store.count_by_project(project_id))
-        except Exception:  # noqa: BLE001 — defensive default per spec
+        except Exception:
             return 0

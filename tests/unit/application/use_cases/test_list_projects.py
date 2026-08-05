@@ -28,7 +28,6 @@ from mcp_server.application.ports.manifest import Manifest, Project
 from mcp_server.security.audit import AuditLogger
 from mcp_server.security.output_sanitizer import OutputSanitizer
 
-
 # ---------------------------------------------------------------------------
 # Fakes
 # ---------------------------------------------------------------------------
@@ -48,7 +47,7 @@ def _project(*, id: str, display_name: str = "", description: str = "") -> Proje
     """Build a minimal :class:`Project` for the manifest fake."""
     return Project(
         id=id,
-        path=Path(f"/tmp/{id}"),
+        path=Path(f"/fake/{id}"),
         display_name=display_name,
         description=description,
         include_subdirs=["."],

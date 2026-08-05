@@ -78,8 +78,8 @@ from mcp_server.domain.exceptions import (
 )
 
 __all__ = [
-    "JSON_RPC_INVALID_PARAMS",
     "JSON_RPC_INTERNAL_ERROR",
+    "JSON_RPC_INVALID_PARAMS",
     "translate_tool_error",
 ]
 

@@ -35,7 +35,6 @@ from mcp_server.domain.exceptions import (
     ManifestProjectNotFoundError,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fakes
 # ---------------------------------------------------------------------------
@@ -229,6 +228,7 @@ class TestSearchCodeTool:
         """``GeminiTransientError`` is mapped to the authored message,
         not the raw SDK text."""
         from fastmcp.exceptions import ToolError
+
         from mcp_server.domain.exceptions import GeminiTransientError
 
         search_uc = _FakeSearchCodeUseCase(

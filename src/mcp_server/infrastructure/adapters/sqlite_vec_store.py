@@ -27,9 +27,7 @@ from __future__ import annotations
 
 import sqlite3
 import struct
-from typing import Any
 
-from mcp_server.application.ports.vector_store import VectorStorePort
 from mcp_server.domain.entities import CodeChunk, SearchResult
 from mcp_server.domain.exceptions import EmbeddingDimensionMismatchError
 
@@ -193,7 +191,7 @@ class SqliteVecStore:
                 start_char,
                 end_char,
                 content,
-                flagged,  # noqa: F841
+                flagged,
                 distance,
             ) = row
             results.append(

@@ -25,12 +25,10 @@ test suite stays fast.
 
 from __future__ import annotations
 
-import time
 from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Fake google-genai transport
@@ -144,7 +142,6 @@ class TestRetryPolicyOn429:
     """``429`` is retryable; full jitter backoff; succeeds within 3 attempts."""
 
     def test_429_then_200_succeeds_and_sleeps_once(self, monkeypatch) -> None:
-        from mcp_server.domain.exceptions import GeminiTransientError
         from mcp_server.infrastructure.adapters import gemini_embedding as ge
 
         responses = [_RuntimeErrorFn(), _embed_response([0.0] * 768)]

@@ -23,12 +23,9 @@ the adapter (per ADR-003 follow-up).
 from __future__ import annotations
 
 import hashlib
-import os
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
-
-import pytest
 
 from mcp_server.application.ports.secret_scanner import ScanVerdict
 
