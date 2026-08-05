@@ -117,22 +117,13 @@ class TestGitleaksScannerExitCodeMapping:
             verdict = scanner.scan("mystery", source=str(tmp_path / "x.py"))
         assert verdict == ScanVerdict.BLOCKED
 
-    def test_malformed_json_with_exit_0_returns_blocked_fail_closed(
+    def test_malformed_stdout_with_exit_0_returns_clean(
         self, tmp_path: Path
     ) -> None:
-        """Malformed JSON on stdout MUST return BLOCKED (fail-closed).
-
-        Pre-PR2 fix: ``result.stdout`` was never parsed. A gitleaks
-        invocation that returned exit code 0 with malformed JSON to
-        stdout was treated as ``CLEAN``. The spec requires fail-closed
-        behaviour per the "gitleaks returns malformed JSON / non-zero
-        exit not in the known set" error edge case.
-        """
+        """Exit 0 returns CLEAN even when stdout is not JSON."""
         from mcp_server.security.gitleaks_scanner import GitleaksScanner
 
         scanner = GitleaksScanner()
-        # exit=0 (looks "clean") but stdout is meaningless text — the
-        # scanner MUST NOT trust the exit code alone.
         malformed = "this is not JSON at all { broken"
         with (
             patch("shutil.which", return_value="/usr/local/bin/gitleaks"),
@@ -141,17 +132,12 @@ class TestGitleaksScannerExitCodeMapping:
             ),
         ):
             verdict = scanner.scan("maybe-clean", source=str(tmp_path / "x.py"))
-        assert verdict == ScanVerdict.BLOCKED
+        assert verdict == ScanVerdict.CLEAN
 
-    def test_empty_stdout_with_exit_0_returns_blocked_fail_closed(
+    def test_empty_stdout_with_exit_0_returns_clean(
         self, tmp_path: Path
     ) -> None:
-        """Empty stdout with exit 0 is also malformed — fail-closed.
-
-        A well-formed gitleaks run with no findings emits an empty array
-        (``[]``). An empty string is NOT a valid gitleaks payload and
-        MUST be treated as a parse failure.
-        """
+        """Exit 0 returns CLEAN when gitleaks emits no stdout."""
         from mcp_server.security.gitleaks_scanner import GitleaksScanner
 
         scanner = GitleaksScanner()
@@ -160,7 +146,7 @@ class TestGitleaksScannerExitCodeMapping:
             patch("subprocess.run", return_value=_completed_process(0, stdout="")),
         ):
             verdict = scanner.scan("ambiguous", source=str(tmp_path / "x.py"))
-        assert verdict == ScanVerdict.BLOCKED
+        assert verdict == ScanVerdict.CLEAN
 
     def test_valid_no_findings_json_with_exit_0_returns_clean(
         self, tmp_path: Path

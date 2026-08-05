@@ -58,6 +58,7 @@ Issues = "https://github.com/lodeharri/portfolio-mcp-server/issues"
 # Entry point: `mcp-server` starts the FastAPI app (uvicorn src.mcp_server.app:app)
 [project.scripts]
 mcp-server = "mcp_server.app:run"
+preindex = "mcp_server.interfaces.cli.preindex:cli"
 
 [tool.setuptools.packages.find]
 where = ["src"]

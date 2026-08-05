@@ -139,6 +139,14 @@ class GitleaksScanner:
         # well-formed scan: a malformed JSON payload or empty stdout
         # MUST be treated as fail-closed ``BLOCKED`` rather than
         # ``CLEAN``.
+        #
+        # NOTE: gitleaks 8.18.x does NOT emit a JSON array to stdout when
+        # no findings are found — it only writes log messages to stderr
+        # and exits 0. So we MUST special-case exit code 0 (= CLEAN) and
+        # skip stdout validation there. Stdout validation only applies
+        # when exit code != 0 (i.e., there are findings to report).
+        if result.returncode == 0:
+            return ScanVerdict.CLEAN
         if not self._is_valid_scan_output(result.stdout):
             self._emit_audit(
                 "secret.malformed_output",
