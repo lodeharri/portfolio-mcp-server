@@ -1,0 +1,41 @@
+# .dockerignore — keep the Docker build context small.
+#
+# Every entry here is a file/dir that the Dockerfile does NOT need.
+# Smaller context = faster build, fewer chances to leak secrets, and a
+# tighter image. The runtime image is built FROM the builder stage
+# artifacts (`/opt/venv`, `data/index.sqlite`); this file is about what
+# we send over the wire INTO the builder.
+
+# VCS, CI, and project metadata that bloat the context.
+.git
+.gitignore
+.github
+
+# Local-only state (skill registry, OpenMemory cache, SDD artifacts).
+.atl
+.engram
+openspec
+
+# Virtualenv + Python cache.
+.venv
+__pycache__
+*.py[cod]
+
+# Linter / test caches.
+.ruff_cache
+.pytest_cache
+test-results
+playwright-report
+
+# Local dev fixtures and the pre-baked vector index (the builder
+# produces a fresh one with `python -m mcp_server.interfaces.cli.preindex`).
+data/index.sqlite
+data/index.sqlite-*
+
+# Docker compose variants not used by the deploy workflow.
+docker-compose*.yml
+
+# Markdown docs — README is whitelisted because pyproject.toml points
+# at it (`readme = "README.md"`). The Dockerfile COPY chains it back in.
+*.md
+!README.md

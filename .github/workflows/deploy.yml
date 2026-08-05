@@ -23,12 +23,82 @@ concurrency:
   cancel-in-progress: false              # let in-flight deploys finish
 
 jobs:
+  # Local Docker build gate. Runs cheaply BEFORE the expensive Fly deploy.
+  # Three guards:
+  #   1. Image size < 150 MB (was the PR4 success criterion from spec)
+  #   2. Runtime UID is 10001 (non-root, ADR-001)
+  #   3. GEMINI_API_KEY is NOT present in the final image env (no leak)
+  # BuildKit --mount=type=secret guarantees the key never enters a layer,
+  # but we re-check at runtime as defense-in-depth.
+  docker-build:
+    name: Build image locally + size / uid / leak guards
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image (BuildKit, BAKE_INDEX=on, secret-mounted GEMINI)
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          # If GEMINI_API_KEY is empty, disable baking the vector index
+          # (preindex auto-falls back to --mock-gemini, which would still
+          # work but burns a minute for no real value when no key).
+          if [ -z "${GEMINI_API_KEY}" ]; then
+            echo "GEMINI_API_KEY empty — building with BAKE_INDEX=off"
+            BAKE_INDEX=off
+          else
+            BAKE_INDEX=on
+          fi
+          docker build \
+            -t mcp-server:test \
+            --build-arg BAKE_INDEX="${BAKE_INDEX}" \
+            --secret id=gemini,env=GEMINI_API_KEY \
+            .
+
+      - name: Assert image size < 150 MB
+        run: |
+          SIZE_BYTES=$(docker image ls mcp-server:test --format '{{.Size}}' | head -1)
+          # Format is "<number><unit>" e.g. "142.3MB". Convert to MB.
+          SIZE_MB=$(echo "$SIZE_BYTES" | awk '
+            {
+              val=$1;
+              unit=substr($1, length($1)-1);
+              num=substr($1, 1, length($1)-2);
+              if (unit == "GB") { num = num * 1024 }
+              else if (unit == "kB") { num = num / 1024 }
+              # assume MB otherwise
+              printf "%.1f", num
+            }')
+          echo "Image size: ${SIZE_BYTES} (${SIZE_MB} MB)"
+          awk -v s="$SIZE_MB" 'BEGIN { exit (s < 150) ? 0 : 1 }' \
+            || (echo "FAIL: image is ${SIZE_MB} MB, must be < 150 MB" && exit 1)
+
+      - name: Assert runtime UID is 10001 (non-root)
+        run: |
+          UID_OUT=$(docker run --rm mcp-server:test id -u)
+          echo "Runtime UID: ${UID_OUT}"
+          [ "$UID_OUT" = "10001" ] \
+            || (echo "FAIL: expected UID 10001, got ${UID_OUT}" && exit 1)
+
+      - name: Assert no GEMINI_API_KEY leak in the final image env
+        run: |
+          # Builds + runs as a single short-lived container, prints env.
+          LEAK=$(docker run --rm mcp-server:test env | grep -i gemini || true)
+          if [ -n "$LEAK" ]; then
+            echo "FAIL: GEMINI_API_KEY leaked into image env:"
+            echo "$LEAK"
+            exit 1
+          fi
+          echo "OK: no GEMINI_API_KEY in image env"
+
   build-and-push:
     name: Build & push image to Fly registry
     runs-on: ubuntu-latest
-    # Skip if lint/secret-scan/test failed in the same run. The `needs` chain
-    # enforces a green pipeline before deploy.
-    needs: []  # cross-workflow gating is configured in branch protection; we re-check tests here
+    # Skip if the local docker-build gate (size / uid / leak) failed.
+    needs: docker-build
     outputs:
       image: ${{ steps.meta.outputs.image }}
     steps:

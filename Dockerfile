@@ -1,7 +1,7 @@
 # Multi-stage Dockerfile — final image target <150 MB.
 #
-# Stage 1 (builder): install build deps, compile wheels.
-# Stage 2 (runtime): python:3.10.12-slim, copy wheels, run as non-root.
+# Stage 1 (builder): install build deps, compile wheels, bake the index.
+# Stage 2 (runtime): python:3.10.12-slim, copy wheels + index, non-root.
 #
 # Free-tier / size discipline:
 #   - python:3.10.12-slim (Debian) is the smallest base that still has
@@ -9,10 +9,42 @@
 #   - No Node, no Playwright, no Playwright browsers in the final image.
 #     Those run in CI only.
 #   - We pre-bake a vector index at build time (data/index.sqlite) using
-#     scripts/preindex.py so the runtime server has zero cold-start work.
+#     `python -m mcp_server.interfaces.cli.preindex` so the runtime
+#     server has zero cold-start work.
+#   - BuildKit `--mount=type=cache` keeps the pip cache out of the
+#     builder layer; BuildKit `--mount=type=secret` keeps the
+#     GEMINI_API_KEY out of the image layers.
+#
+# Build arguments:
+#   --build-arg BAKE_INDEX=on (default)         Run preindex in the builder.
+#   --build-arg BAKE_INDEX=off                  Skip preindex (faster CI).
+#   --build-arg GITLEAKS_VERSION=8.18.4         Gitleaks Go binary version.
+#
+# Build secrets (BuildKit required, Docker >= 23.0):
+#   --secret id=gemini,env=GEMINI_API_KEY       Injected as /run/secrets/gemini
+#                                               only during the preindex RUN.
+#                                               NEVER lands in the image.
+#
+# Runtime contract:
+#   - Platform-agnostic PORT (Fly 8080, HF Spaces 7860, Render 10000).
+#   - CMD uses shell form so $PORT is expanded at runtime.
+#   - HEALTHCHECK uses os.environ.get("PORT") so it tracks the platform.
+#   - Image runs as UID 10001 (mcp) — non-root by default.
+
+# syntax=docker/dockerfile:1.7
+# ^^^ Required for BuildKit --mount=type=secret and --mount=type=cache.
 
 # ---------- Stage 1: builder ----------
 FROM python:3.10.12-slim AS builder
+
+# Gitleaks version for the secret scanner used by the preindex pipeline.
+# Matches the version pinned in pyproject.toml / docs.
+ARG GITLEAKS_VERSION=8.18.4
+
+# Build-time switch: bake the vector index? Default ON. CI can pass
+# --build-arg BAKE_INDEX=off to skip the preindex step (saves time on
+# PRs that don't touch indexing).
+ARG BAKE_INDEX=on
 
 WORKDIR /build
 
@@ -20,22 +52,63 @@ WORKDIR /build
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     gcc \
+    curl \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+# Install the gitleaks Go binary from the GitHub release. The scanner
+# lives in src/mcp_server/security/gitleaks_scanner.py and shells out
+# to ``gitleaks`` via subprocess. We only need it in the BUILDER stage
+# for the preindex step; the runtime stage does NOT carry it.
+RUN curl -fsSL \
+    "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+        -o /tmp/gitleaks.tar.gz \
+    && tar -xzf /tmp/gitleaks.tar.gz -C /tmp \
+    && mv /tmp/gitleaks /usr/local/bin/gitleaks \
+    && chmod +x /usr/local/bin/gitleaks \
+    && rm -f /tmp/gitleaks.tar.gz /tmp/gitleaks \
+    && gitleaks version
 
 # Copy only the project metadata first for better layer caching.
 COPY pyproject.toml README.md ./
 COPY src ./src
+COPY config ./config
 
-# Build a wheel and install into a venv we copy to the runtime stage.
+# Build a venv and install the package into it. The pip cache mount
+# keeps wheels out of the layer (saves ~50 MB on the builder; the
+# builder is discarded anyway, but smaller builders = faster CI).
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir .
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir .
+
+# Pre-bake the vector index. The BuildKit secret mount guarantees
+# GEMINI_API_KEY is NEVER written to a layer — it is exposed only as
+# the file /run/secrets/gemini during this RUN, then discarded.
+# If BAKE_INDEX=off, the RUN is skipped (faster CI).
+# If GEMINI_API_KEY is unset, preindex auto-falls back to --mock-gemini
+# (documented in src/mcp_server/interfaces/cli/preindex.py).
+RUN mkdir -p /build/data
+# NOTE: BuildKit --mount=type=secret MUST be on the RUN line itself,
+# not inside the shell. The mount is scoped to the entire RUN, so
+# when BAKE_INDEX=off the secret is still mounted but never read.
+RUN --mount=type=secret,id=gemini \
+    if [ "$BAKE_INDEX" = "on" ]; then \
+        GEMINI_API_KEY=$(cat /run/secrets/gemini) \
+            python -m mcp_server.interfaces.cli.preindex \
+                --manifest /build/config/projects.manifest.yaml \
+                --db /build/data/index.sqlite \
+            || echo "WARN: preindex skipped (no API key or non-fatal failure)"; \
+    else \
+        echo "BAKE_INDEX=off — skipping preindex"; \
+    fi
 
 # ---------- Stage 2: runtime ----------
 FROM python:3.10.12-slim AS runtime
 
-# Run as non-root. UID 10001 is Fly's preferred unprivileged UID.
+# Run as non-root. UID/GID 10001 is Fly.io's recommended unprivileged
+# UID and is below the 65535 cap that breaks on some shared kernels.
 RUN groupadd --system --gid 10001 mcp && \
     useradd  --system --uid 10001 --gid mcp --create-home mcp
 
@@ -45,27 +118,40 @@ WORKDIR /app
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1 \
+    PORT=8080
 
 # Copy runtime code and the manifest.
-COPY --chown=mcp:mcp src ./src
-COPY --chown=mcp:mcp config ./config
-COPY --chown=mcp:mcp pyproject.toml README.md ./
+COPY --chown=mcp:mcp --from=builder /build/src ./src
+COPY --chown=mcp:mcp --from=builder /build/config ./config
+COPY --chown=mcp:mcp --from=builder /build/pyproject.toml ./
+COPY --chown=mcp:mcp --from=builder /build/README.md ./
 
-# Pre-bake the vector index. Requires GEMINI_API_KEY at build time; pass
-# via `--build-arg GEMINI_API_KEY=...` or a Fly build secret. The resulting
-# data/index.sqlite is what the runtime serves from.
-ARG GEMINI_API_KEY
-ENV GEMINI_API_KEY=${GEMINI_API_KEY}
-RUN python -m mcp_server.interfaces.cli.preindex || echo "WARN: preindex skipped (no API key)"
+# Copy the baked index if it exists. The shell guard makes the COPY
+# optional: if BAKE_INDEX=off or preindex errored, the runtime image
+# still builds — the runtime server boots with an empty vector store
+# and /healthz returns 200 (the index is a soft dependency for tools,
+# not for the probe). See spec scenario "Build without GEMINI_API_KEY
+# still succeeds".
+COPY --chown=mcp:mcp --from=builder /build/data/index.sqlite ./data/index.sqlite 2>/dev/null \
+    || echo "WARN: no baked index — runtime will start with an empty vector store"
 
 USER mcp
 
+# EXPOSE only accepts literals. The platform-specific PORT is documented
+# in fly.toml (PORT=8080), set via env var in Hugging Face Spaces
+# (PORT=7860), and set via env var in Render (PORT=10000). See README.
 EXPOSE 8080
 
-# Healthcheck uses the FastAPI /healthz route. Pika-style.
+# Healthcheck uses the FastAPI /healthz route. The port is read at
+# runtime via os.environ.get("PORT") so the same image works on every
+# platform. JSON-form CMD does NOT expand shell variables, hence the
+# inline Python.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD python -c "import httpx,sys; sys.exit(0 if httpx.get('http://localhost:8080/healthz', timeout=4).status_code==200 else 1)"
+    CMD ["python", "-c", "import os, httpx, sys; sys.exit(0 if httpx.get(f'http://localhost:{os.environ.get(\"PORT\", \"8080\")}/healthz', timeout=4).status_code==200 else 1)"]
 
-# Start uvicorn. The --workers 1 keeps the 256 MB machine happy.
-CMD ["uvicorn", "mcp_server.app:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]
+# Start uvicorn. Shell form so $PORT expands at runtime. The
+# --workers 1 keeps the 256 MB machine happy (slowapi in-memory state
+# diverges across workers) and matches the Fly.io http_service
+# concurrency setting in fly.toml.
+CMD uvicorn mcp_server.app:app --host 0.0.0.0 --port ${PORT} --workers 1
