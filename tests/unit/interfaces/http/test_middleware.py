@@ -55,11 +55,10 @@ class TestOutputSanitizerMiddlewareContract:
 
     def test_add_middleware_registers_sanitizer(self) -> None:
         """``create_app`` MUST register OutputSanitizerMiddleware via ``add_middleware``."""
-        from pathlib import Path
+        from mcp_server.app import create_app
+        from mcp_server.config import AppConfig
 
-        from mcp_server.interfaces.http.app_factory import build_app
-
-        app = build_app()
+        app = create_app(AppConfig())
         # FastAPI stores middleware classes on ``app.user_middleware``.
         middleware_classes = [
             m.cls.__name__ for m in app.user_middleware if hasattr(m, "cls")
