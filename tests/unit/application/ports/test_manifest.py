@@ -126,6 +126,9 @@ class TestManifestPortConformance:
             def load(self) -> Manifest:
                 return self._m
 
+            def projects(self) -> list[Project]:
+                return list(self._m.projects)
+
             def is_path_indexed(self, path: Path) -> bool:
                 return str(path).startswith(str(self._m.projects[0].path))
 

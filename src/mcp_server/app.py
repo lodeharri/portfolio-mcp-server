@@ -28,6 +28,9 @@ from fastapi import FastAPI
 from mcp_server.composition import create_composition
 from mcp_server.config import AppConfig, load_config
 from mcp_server.interfaces.http.healthz import build_healthz_router
+from mcp_server.interfaces.http.middleware.sanitizer import (
+    OutputSanitizerMiddleware,
+)
 from mcp_server.interfaces.mcp.server import mcp
 
 
@@ -42,6 +45,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     4. Wire the composition root into ``app.state.composition``.
     5. Mount ``/healthz`` via the healthz router.
     6. Mount the MCP sub-app at ``/mcp``.
+    7. Register the OutputSanitizerMiddleware (Layer 3 — task 2.13).
 
     Each call returns a fresh, independently usable FastAPI instance —
     there is no module-level cache beyond the optional ``app`` constant
@@ -53,13 +57,28 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     # FastMCP 3.2.4+ mount pattern. The parent FastAPI MUST share the MCP
     # lifespan so the sub-app initializes its session manager on startup.
     mcp_app = mcp.http_app(path="/")
+
+    # Eagerly wire composition so we can install the middleware with
+    # the sanitizer instance it owns. We register the middleware via
+    # ``add_middleware`` AFTER the app is built so Starlette's
+    # ``BaseHTTPMiddleware`` picks up the FastAPI lifespan.
+    composition = create_composition(config)
+
     app = FastAPI(
         title="mcp-server-playground",
         lifespan=mcp_app.lifespan,
     )
 
     # Composition root — single wiring point (ADR-001).
-    app.state.composition = create_composition(config)
+    app.state.composition = composition
+
+    # Layer 3 — OutputSanitizerMiddleware rewrites every response
+    # body to redact secrets before they leave the server. Skips
+    # /healthz and /mcp (see middleware/sanitizer.py).
+    app.add_middleware(
+        OutputSanitizerMiddleware,
+        sanitizer=composition.sanitizer,
+    )
 
     # Operational probe.
     app.include_router(build_healthz_router())

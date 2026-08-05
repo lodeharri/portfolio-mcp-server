@@ -24,7 +24,7 @@ from importlib import metadata as importlib_metadata
 from pathlib import Path
 from typing import Final
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 # ---------------------------------------------------------------------------
 # Build-time defaults
@@ -123,12 +123,21 @@ class AppConfig(BaseModel):
     populated at import time — callers rarely need to override it.
     """
 
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
     port: int = _DEFAULT_PORT
     gemini_api_key: str | None = None
     embedding_dim: int = _DEFAULT_EMBEDDING_DIM
     manifest_path: Path = _DEFAULT_MANIFEST_PATH
     data_dir: Path = _DEFAULT_DATA_DIR
     build_info: BuildInfo = Field(default_factory=lambda: BUILD_INFO)
+    # Private override attribute used only by the preindex CLI to thread
+    # a ``--db PATH`` flag through configuration without re-introducing
+    # env reads. Not part of the public schema; composition reads it via
+    # ``getattr``. The ``extra="ignore"`` model_config above lets us set
+    # this via ``model_copy(update={"_db_path_override": ...})`` without
+    # pydantic rejecting the unknown attribute.
+    _db_path_override: Path | None = None
 
 
 # ---------------------------------------------------------------------------

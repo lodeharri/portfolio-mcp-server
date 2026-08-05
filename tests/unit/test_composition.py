@@ -54,12 +54,22 @@ class TestCompositionDataclass:
         assert isinstance(comp.rate_limiter, SlowapiRateLimiter)
         assert isinstance(comp.audit, AuditLogger)
 
-    def test_all_pr3_placeholders_are_none(self) -> None:
-        """Preindex adapter placeholders are None in PR1 (real adapters in PR3)."""
+    def test_all_pr3_adapters_are_wired(self) -> None:
+        """PR3 wires real adapters for embedding / vector_store / preindex_use_case.
+
+        These were ``None`` placeholders in PR1+PR2; after PR3 they
+        MUST be real instances. The composition root is the only place
+        the wiring logic lives.
+        """
+        from mcp_server.infrastructure.adapters.sqlite_vec_store import (
+            SqliteVecStore,
+        )
+
         comp = create_composition(AppConfig())
-        assert comp.embedding is None
-        assert comp.vector_store is None
-        assert comp.preindex_use_case is None
+        assert comp.embedding is not None
+        assert isinstance(comp.vector_store, SqliteVecStore)
+        assert comp.preindex_use_case is not None
+        assert comp.llm is not None
 
     def test_all_002_placeholders_are_none(self) -> None:
         """Search/list-projects use cases are None in PR1 (real ones in 002-mcp-tools)."""

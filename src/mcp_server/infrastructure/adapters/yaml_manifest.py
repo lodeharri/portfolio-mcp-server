@@ -194,6 +194,14 @@ class YamlManifestAdapter:
         )
         return self._manifest
 
+    def projects(self) -> list[Project]:
+        """Return the list of declared projects.
+
+        Caches the result after the first ``load()`` so repeated calls
+        from the preindex use case and the MCP tool are cheap.
+        """
+        return list(self.load().projects)
+
     def is_path_indexed(self, path: Path) -> bool:
         """Default-deny path-scoping check (Layer 1).
 
