@@ -134,6 +134,8 @@ class SearchResult(BaseModel):
       search results reference code locations, not arbitrary text spans.
 
     Attributes:
+        chunk_hash: SHA-256 hex of the canonical 5-tuple so callers
+            can re-query or correlate the result back to its index row.
         file_path: Absolute path of the matched file.
         line_start: 1-based line number where the match begins.
         line_end: 1-based line number where the match ends.
@@ -144,6 +146,7 @@ class SearchResult(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
+    chunk_hash: str = Field(min_length=64, max_length=64)
     file_path: str = Field(min_length=1)
     line_start: int = Field(ge=1)
     line_end: int = Field(ge=1)

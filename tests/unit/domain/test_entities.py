@@ -209,6 +209,7 @@ class TestSearchResultContract:
         from mcp_server.domain.entities import SearchResult
 
         result = SearchResult(
+            chunk_hash="a" * 64,
             file_path="/tmp/proj/backend/auth.py",
             line_start=10,
             line_end=20,
@@ -216,6 +217,7 @@ class TestSearchResultContract:
             score=0.92,
             project_id="finance-coach-latam",
         )
+        assert result.chunk_hash == "a" * 64
         assert result.file_path == "/tmp/proj/backend/auth.py"
         assert result.line_start == 10
         assert result.line_end == 20
@@ -227,6 +229,7 @@ class TestSearchResultContract:
         from mcp_server.domain.entities import SearchResult
 
         result = SearchResult(
+            chunk_hash="b" * 64,
             file_path="/tmp/x.py",
             line_start=1,
             line_end=5,

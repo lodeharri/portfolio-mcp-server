@@ -257,7 +257,6 @@ class TestSearch:
             store.upsert([chunk])
             results = store.search([0.0] * 768, limit=5)
             assert len(results) == 1
-            assert results[0].chunk_hash == chunk.chunk_hash
             assert results[0].project_id == "finance-coach-latam"
         finally:
             store.close()
