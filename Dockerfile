@@ -81,36 +81,29 @@ RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir .
+    && pip install --no-cache-dir . \
+    # Slim down 100MB of dead weight: google-generativeai (the
+    # deprecated SDK) pulls in google-api-python-client (~100MB) which
+    # we don't use. Until we migrate to google-genai (the new SDK),
+    # drop the bloat here. Track the migration in
+    # tests/integration/test_docker_size.py if/when we do.
+    && rm -rf /opt/venv/lib/python3.10/site-packages/googleapiclient \
+    && rm -rf /opt/venv/lib/python3.10/site-packages/google_cloud_aiplatform_central_root 2>/dev/null || true
 
-# Pre-bake the vector index. The BuildKit secret mount guarantees
-# GEMINI_API_KEY is NEVER written to a layer — it is exposed only as
-# the file /run/secrets/gemini during this RUN, then discarded.
-# If BAKE_INDEX=on with no API key, OR if BAKE_INDEX=off, we fall back
-# to --mock-gemini so the schema-only-index.sqlite is always produced.
-# If GEMINI_API_KEY is unset, preindex auto-falls back to --mock-gemini
-# (documented in src/mcp_server/interfaces/cli/preindex.py).
+# Pre-bake a schema-only vector index. The build context does NOT
+# include the sibling project trees (absolute paths in the manifest
+# pointing outside the build context), so the baked index is always
+# empty — the runtime server populates it with real embeddings via a
+# mounted volume (Fly.io) or persistent disk (HF Spaces). See spec
+# scenario "Build without GEMINI_API_KEY still succeeds".
+#
+# We use a small helper script (scripts/bake_schema.py) instead of
+# running `preindex` directly because (a) preindex requires the project
+# trees mounted at build time which we don't have, and (b) the script
+# is faster and only creates the schema.
 RUN mkdir -p /build/data
-# NOTE: BuildKit --mount=type=secret MUST be on the RUN line itself,
-# not inside the shell. The mount is scoped to the entire RUN, so
-# when BAKE_INDEX=off the secret is still mounted but never read.
 RUN --mount=type=secret,id=gemini \
-    if [ "$BAKE_INDEX" = "on" ] && [ -s /run/secrets/gemini ]; then \
-        GEMINI_API_KEY=$(cat /run/secrets/gemini) \
-            python -m mcp_server.interfaces.cli.preindex \
-                --manifest /build/config/projects.manifest.yaml \
-                --db /build/data/index.sqlite \
-                --quiet \
-            || echo "WARN: preindex failed — runtime will start with empty vector store"; \
-    else \
-        echo "BAKE_INDEX=off (or no API key) — creating empty vector store with schema"; \
-        python -m mcp_server.interfaces.cli.preindex \
-            --manifest /build/config/projects.manifest.yaml \
-            --db /build/data/index.sqlite \
-            --mock-gemini \
-            --quiet \
-        || echo "WARN: empty vector store creation failed"; \
-    fi
+    python /build/scripts/bake_schema.py /build/data/index.sqlite
 
 # ---------- Stage 2: runtime ----------
 FROM python:3.10.12-slim AS runtime
