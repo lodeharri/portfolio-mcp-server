@@ -1,21 +1,27 @@
 """Unit tests for ``interfaces/mcp/tool_errors.translate_tool_error``.
 
 Covers the mapping table from
-``openspec/changes/002-mcp-tools/design/adrs/002-tool-error-translation.md``:
+``openspec/changes/002-mcp-tools/design/adrs/002-tool-error-translation.md``.
 
-* ``ManifestProjectNotFoundError`` -> ``-32602`` invalid params
-* ``ValueError`` (input validation) -> ``-32602`` invalid params
-* ``FileNotFoundError`` -> ``-32603`` internal error
-* ``GeminiTransientError`` -> ``-32603`` internal error
-* ``GeminiPermanentError`` -> ``-32603`` internal error
-* ``EmbeddingDimensionMismatchError`` -> ``-32603`` internal error
-* Generic ``DomainError`` -> ``-32603`` internal error
-* ``McpServerError`` (project base) -> ``-32603`` internal error
-* Programming errors (``TypeError``, ``AttributeError``) re-raised
+FastMCP 3.4.6 limitation
+------------------------
 
-The translated message MUST be authored (never the raw ``str(exc)``
-for SDK-originated exceptions) so a token-shaped fragment in the
-SDK message cannot leak.
+The ``fastmcp.exceptions.ToolError`` class in 3.4.6 only carries a
+message; the per-tool JSON-RPC code is fixed to ``-32603`` by the
+FastMCP transport layer. We therefore test that the **message** is
+authored per the mapping table — the message IS the discriminator
+on the wire.
+
+The mapping is:
+
+* ``ManifestProjectNotFoundError`` -> "project_id '<id>' not declared in manifest"
+* ``ValueError`` (input)            -> "<authored message>" (echoed verbatim)
+* ``FileNotFoundError``             -> "referenced file not found" (no path leak)
+* ``GeminiTransientError``          -> "service temporarily unavailable, retry later"
+* ``GeminiPermanentError``          -> "service rejected the request"
+* ``EmbeddingDimensionMismatchError``-> "index dim mismatch — rebuild index"
+* ``DomainError`` / ``McpServerError`` catch-all -> "internal error"
+* ``TypeError`` / ``AttributeError`` / ``KeyError`` -> re-raised
 """
 
 from __future__ import annotations
@@ -32,9 +38,6 @@ from mcp_server.domain.exceptions import (
     McpServerError,
 )
 
-JSON_RPC_INVALID_PARAMS = -32602
-JSON_RPC_INTERNAL_ERROR = -32603
-
 
 # ---------------------------------------------------------------------------
 # Mapped domain exceptions
@@ -42,21 +45,20 @@ JSON_RPC_INTERNAL_ERROR = -32603
 
 
 class TestMappedDomainErrors:
-    """Each known domain exception maps to a specific JSON-RPC code."""
+    """Each known domain exception maps to a specific authored message."""
 
-    def test_manifest_project_not_found_is_invalid_params(self) -> None:
+    def test_manifest_project_not_found_echoes_id(self) -> None:
         from mcp_server.interfaces.mcp.tool_errors import translate_tool_error
 
         exc = ManifestProjectNotFoundError("project 'foo' not declared in manifest")
         result = translate_tool_error(exc)
 
         assert isinstance(result, ToolError)
-        assert result.code == JSON_RPC_INVALID_PARAMS
         # The translated message echoes the project_id for diagnosability
         # (this message is authored by us, not raw SDK text).
         assert "foo" in str(result)
 
-    def test_value_error_is_invalid_params(self) -> None:
+    def test_value_error_is_echoed(self) -> None:
         """Empty / whitespace-only query, top_k>50, etc."""
         from mcp_server.interfaces.mcp.tool_errors import translate_tool_error
 
@@ -64,56 +66,57 @@ class TestMappedDomainErrors:
         result = translate_tool_error(exc)
 
         assert isinstance(result, ToolError)
-        assert result.code == JSON_RPC_INVALID_PARAMS
         # Echo the validation message — we authored it.
         assert "non-empty" in str(result)
 
-    def test_file_not_found_is_internal_error(self) -> None:
+    def test_file_not_found_does_not_leak_path(self) -> None:
         from mcp_server.interfaces.mcp.tool_errors import translate_tool_error
 
         exc = FileNotFoundError("ADR at /missing.md")
         result = translate_tool_error(exc)
 
         assert isinstance(result, ToolError)
-        assert result.code == JSON_RPC_INTERNAL_ERROR
         # The translated message MUST be a fixed authored string;
         # the raw path from the OSError leaks filesystem structure.
         assert "/missing.md" not in str(result)
+        assert "not found" in str(result).lower()
 
-    def test_gemini_transient_error_is_internal_error(self) -> None:
+    def test_gemini_transient_error_is_authored(self) -> None:
         from mcp_server.interfaces.mcp.tool_errors import translate_tool_error
 
         exc = GeminiTransientError("429 rate limit exhausted")
         result = translate_tool_error(exc)
 
         assert isinstance(result, ToolError)
-        assert result.code == JSON_RPC_INTERNAL_ERROR
         # Authored message — no raw SDK fragment leaks.
         assert "429" not in str(result)
-        assert "rate limit" in str(result).lower() or "temporarily" in str(result).lower()
+        assert "temporarily" in str(result).lower()
 
-    def test_gemini_permanent_error_is_internal_error(self) -> None:
+    def test_gemini_permanent_error_is_authored(self) -> None:
         from mcp_server.interfaces.mcp.tool_errors import translate_tool_error
 
         exc = GeminiPermanentError("400 bad request: invalid api key")
         result = translate_tool_error(exc)
 
         assert isinstance(result, ToolError)
-        assert result.code == JSON_RPC_INTERNAL_ERROR
         # The raw "invalid api key" phrase MUST NOT leak.
         assert "invalid api key" not in str(result).lower()
+        assert "rejected" in str(result).lower()
 
-    def test_embedding_dimension_mismatch_is_internal_error(self) -> None:
+    def test_embedding_dimension_mismatch_is_authored(self) -> None:
         from mcp_server.interfaces.mcp.tool_errors import translate_tool_error
 
         exc = EmbeddingDimensionMismatchError("query vector dim 1024 != 768")
         result = translate_tool_error(exc)
 
         assert isinstance(result, ToolError)
-        assert result.code == JSON_RPC_INTERNAL_ERROR
+        # Authored message: the literal "dim 1024 != 768" is fine but
+        # the helper writes a clearer message.
+        assert "dim" in str(result).lower()
+        assert "rebuild" in str(result).lower()
 
     def test_generic_domain_error_is_internal_error(self) -> None:
-        """Any other :class:`DomainError` subclass defaults to ``-32603``."""
+        """Any other :class:`DomainError` subclass defaults to ``internal error``."""
         from mcp_server.interfaces.mcp.tool_errors import translate_tool_error
 
         class CustomDomainError(DomainError):
@@ -123,7 +126,9 @@ class TestMappedDomainErrors:
         result = translate_tool_error(exc)
 
         assert isinstance(result, ToolError)
-        assert result.code == JSON_RPC_INTERNAL_ERROR
+        # Catch-all: never leak the original domain message.
+        assert "something domain-specific" not in str(result)
+        assert "internal error" in str(result).lower()
 
     def test_mcp_server_error_is_internal_error(self) -> None:
         """Project-wide base maps to internal error (defensive default)."""
@@ -136,7 +141,8 @@ class TestMappedDomainErrors:
         result = translate_tool_error(exc)
 
         assert isinstance(result, ToolError)
-        assert result.code == JSON_RPC_INTERNAL_ERROR
+        assert "infrastructure blew up" not in str(result)
+        assert "internal error" in str(result).lower()
 
 
 # ---------------------------------------------------------------------------
@@ -180,11 +186,12 @@ class TestExceptionHierarchy:
 
         # ``GeminiTransientError`` is also a ``DomainError`` — the
         # helper must match the transient case BEFORE the generic
-        # domain case to give the correct code + message.
+        # domain case to give the correct message.
         result = translate_tool_error(GeminiTransientError("oops"))
-        assert result.code == JSON_RPC_INTERNAL_ERROR
+        assert isinstance(result, ToolError)
         # Authored message (not the raw "oops")
         assert "oops" not in str(result)
+        assert "temporarily" in str(result).lower()
 
     def test_manifest_project_not_found_is_specific_not_generic_domain(self) -> None:
         """``ManifestProjectNotFoundError`` MUST get its specific message,
