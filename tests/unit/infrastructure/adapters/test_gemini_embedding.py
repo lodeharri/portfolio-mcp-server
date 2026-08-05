@@ -88,6 +88,9 @@ class TestGeminiEmbeddingAdapterHappyPath:
         # Patch ``google.generativeai`` so the adapter sees our fake client.
         from mcp_server.infrastructure.adapters import gemini_embedding as ge
 
+        # The adapter makes one ``embed_content`` call per input text
+        # (Gemini's API requires per-text requests). Return a fresh
+        # 768-float response for each call.
         fake_client = _build_fake_client(
             [
                 _embed_response([0.1] * 768),
