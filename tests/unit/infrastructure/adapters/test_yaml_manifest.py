@@ -277,3 +277,68 @@ class TestYamlManifestAdapterErrors:
         adapter = YamlManifestAdapter(bad)
         with pytest.raises(ManifestSchemaError):
             adapter.load()
+
+    def test_missing_projects_raises_manifest_schema_error(self, tmp_path: Path) -> None:
+        """A manifest WITHOUT a `projects:` key is rejected.
+
+        Pre-PR2 fix: ``_RawManifest.projects`` had ``default_factory=list``,
+        so a YAML missing the ``projects`` key silently validated as an
+        empty project list. The spec demands ``ManifestSchemaError`` so the
+        preindex pipeline aborts at startup (fail-closed). See the
+        ``Invalid manifest schema is rejected`` scenario in
+        ``openspec/changes/001-bootstrap/specs/security-layers.md``.
+        """
+        from mcp_server.domain.exceptions import ManifestSchemaError
+        from mcp_server.infrastructure.adapters.yaml_manifest import (
+            YamlManifestAdapter,
+        )
+
+        project_root = tmp_path / "proj"
+        project_root.mkdir()
+        body = f"""
+            schema_version: 1
+            server:
+              name: portfolio-mcp-server
+              version: 0.1.0
+              description: test
+            indexing:
+              default_policy: deny
+              chunk_size: 1500
+              chunk_overlap: 200
+            # NOTE: no `projects:` key at all.
+            """
+        manifest_path = _write_manifest(tmp_path, body)
+        adapter = YamlManifestAdapter(manifest_path)
+        with pytest.raises(ManifestSchemaError):
+            adapter.load()
+
+    def test_empty_projects_raises_manifest_schema_error(self, tmp_path: Path) -> None:
+        """A manifest with `projects: []` is rejected.
+
+        An empty projects list is just as dangerous as a missing one: the
+        pipeline would start with no declared scope and silently index
+        nothing. The spec requires ``ManifestSchemaError``.
+        """
+        from mcp_server.domain.exceptions import ManifestSchemaError
+        from mcp_server.infrastructure.adapters.yaml_manifest import (
+            YamlManifestAdapter,
+        )
+
+        manifest_path = _write_manifest(
+            tmp_path,
+            """
+            schema_version: 1
+            server:
+              name: portfolio-mcp-server
+              version: 0.1.0
+              description: test
+            indexing:
+              default_policy: deny
+              chunk_size: 1500
+              chunk_overlap: 200
+            projects: []
+            """,
+        )
+        adapter = YamlManifestAdapter(manifest_path)
+        with pytest.raises(ManifestSchemaError):
+            adapter.load()
