@@ -7,17 +7,17 @@ Chain strategy: stacked-to-main
 
 ## Phase 0 — Hexagonal Invariant (RED → GREEN)
 
-- [ ] 0.1 Extend `tests/integration/test_hexagonal_invariants.py` to assert `compose()` wires all 6 use case fields + the Agent (no `None`). Flip `test_composition_wiring.py::test_search_use_case_is_none` / `::test_list_projects_use_case_is_none` to assert real instances. RED against current code, GREEN after Phase 1–3.
+- [x] 0.1 Extend `tests/integration/test_hexagonal_invariants.py` to assert `compose()` wires all 6 use case fields + the Agent (no `None`). Flip `test_composition_wiring.py::test_search_use_case_is_none` / `::test_list_projects_use_case_is_none` to assert real instances. RED against current code, GREEN after Phase 1–3.
 
 ## Phase 1 — PR1: Read-Only Tools (`list_projects`, `search_code`)
 
-- [ ] 1.1 RED→GREEN `application/use_cases/list_projects.py::ListProjectsUseCase` + `tests/unit/application/use_cases/test_list_projects.py` — manifest read, optional vector_store for chunk counts, 5-pattern redaction, empty manifest → `[]`, `audit.warn("output.redacted")`.
-- [ ] 1.2 RED→GREEN `application/use_cases/search_code.py::SearchCodeUseCase` + tests — embed→search, top-k order, project_id filter, empty query ValueError, top_k>50 cap, multi-pattern redaction on chunk `content`.
-- [ ] 1.3 RED→GREEN `interfaces/mcp/tool_errors.py::translate_tool_error` (NEW, ADR-002) + `tests/unit/interfaces/mcp/test_tool_errors.py` — parametrize over `ManifestProjectNotFoundError`/`ValueError` → `-32602`; `FileNotFoundError`/`GeminiTransientError`/`EmbeddingDimensionMismatchError`/`RateLimitExceeded` → `-32603`; unknown `DomainError` → `-32603`; programming errors re-raised.
-- [ ] 1.4 RED→GREEN `interfaces/mcp/tools.py` (NEW) — `list_projects_tool` + `search_code_tool` wrappers (~10 lines each), `try/except DomainError → raise translate_tool_error(exc)`.
-- [ ] 1.5 GREEN `composition.py` — instantiate 2 use cases; replace `None` for `list_projects_use_case` + `search_use_case`.
-- [ ] 1.6 GREEN `interfaces/mcp/server.py` — `from mcp_server.interfaces.mcp import tools as _tools` to fire decorator registration.
-- [ ] 1.7 GREEN `tests/integration/test_mcp_mount.py` — assert both tools in `await client.list_tools()`.
+- [x] 1.1 RED→GREEN `application/use_cases/list_projects.py::ListProjectsUseCase` + `tests/unit/application/use_cases/test_list_projects.py` — manifest read, optional vector_store for chunk counts, 5-pattern redaction, empty manifest → `[]`, `audit.warn("output.redacted")`.
+- [x] 1.2 RED→GREEN `application/use_cases/search_code.py::SearchCodeUseCase` + tests — embed→search, top-k order, project_id filter, empty query ValueError, top_k>50 cap, multi-pattern redaction on chunk `content`.
+- [x] 1.3 RED→GREEN `interfaces/mcp/tool_errors.py::translate_tool_error` (NEW, ADR-002) + `tests/unit/interfaces/mcp/test_tool_errors.py` — parametrize over `ManifestProjectNotFoundError`/`ValueError` → `-32602`; `FileNotFoundError`/`GeminiTransientError`/`EmbeddingDimensionMismatchError`/`RateLimitExceeded` → `-32603`; unknown `DomainError` → `-32603`; programming errors re-raised.
+- [x] 1.4 RED→GREEN `interfaces/mcp/tools.py` (NEW) — `list_projects_tool` + `search_code_tool` wrappers (~10 lines each), `try/except DomainError → raise translate_tool_error(exc)`.
+- [x] 1.5 GREEN `composition.py` — instantiate 2 use cases; replace `None` for `list_projects_use_case` + `search_use_case`.
+- [x] 1.6 GREEN `interfaces/mcp/server.py` — `from mcp_server.interfaces.mcp import tools as _tools` to fire decorator registration.
+- [x] 1.7 GREEN `tests/integration/test_mcp_mount.py` — assert both tools in `await client.list_tools()`.
 
 ## Phase 2 — PR2: File Readers + LLM (`explain_architecture`, `summarize_readme`, `get_architecture_diagram`)
 
