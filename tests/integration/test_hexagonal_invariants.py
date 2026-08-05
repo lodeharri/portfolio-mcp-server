@@ -293,8 +293,7 @@ def test_composition_root_is_only_wiring_point() -> None:
             "(it wires concrete adapters per ADR-001)"
         )
         assert imports_use_cases, (
-            f"composition.py must import from {USE_CASES_PREFIX} "
-            "(it wires use cases per ADR-001)"
+            f"composition.py must import from {USE_CASES_PREFIX} (it wires use cases per ADR-001)"
         )
 
 
