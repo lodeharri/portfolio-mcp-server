@@ -74,6 +74,15 @@ class ManifestPort(Protocol):
         """
         ...
 
+    def projects(self) -> list[Project]:
+        """Return the list of declared projects.
+
+        Used by the preindex use case and the ``list_portfolio_projects``
+        MCP tool. Returns the parsed ``Project`` list — implementations
+        MAY cache it after ``load()``.
+        """
+        ...
+
     def is_path_indexed(self, path: Path) -> bool:
         """Return ``True`` iff ``path`` is eligible for indexing.
 

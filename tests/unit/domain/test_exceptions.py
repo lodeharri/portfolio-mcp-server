@@ -61,6 +61,24 @@ class TestMcPServerErrorBase:
 
         assert issubclass(ManifestPermissionError, DomainError)
 
+    def test_manifest_error_base_inherits_from_domain_error(self) -> None:
+        from mcp_server.domain.exceptions import DomainError, ManifestError
+
+        assert issubclass(ManifestError, DomainError)
+
+    def test_manifest_subclasses_inherit_from_manifest_error(self) -> None:
+        from mcp_server.domain.exceptions import (
+            ManifestError,
+            ManifestNotFoundError,
+            ManifestPermissionError,
+            ManifestSchemaError,
+        )
+
+        for cls in (ManifestSchemaError, ManifestNotFoundError, ManifestPermissionError):
+            assert issubclass(cls, ManifestError), (
+                f"{cls.__name__} should also inherit from ManifestError"
+            )
+
     def test_gitleaks_binary_missing_error_inherits_from_domain_error(self) -> None:
         from mcp_server.domain.exceptions import DomainError, GitleaksBinaryMissingError
 

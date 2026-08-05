@@ -56,6 +56,7 @@ __all__ = [
     "GeminiPermanentError",
     "GeminiTransientError",
     "GitleaksBinaryMissingError",
+    "ManifestError",
     "ManifestNotFoundError",
     "ManifestPermissionError",
     "ManifestProjectNotFoundError",
@@ -65,7 +66,7 @@ __all__ = [
     "PreindexExitCode",
     "SchemaError",
     "VectorStoreError",
-]
+] 
 
 
 # ---------------------------------------------------------------------------
@@ -101,28 +102,38 @@ class DomainError(McpServerError):
     """
 
 
-class ManifestSchemaError(DomainError):
+class ManifestError(DomainError):
+    """Base class for any manifest-related failure.
+
+    The CLI catches ``ManifestError`` to map the catchable
+    ``MANIFEST_ERROR`` exit code (2). Concrete subclasses
+    (:class:`ManifestSchemaError`, :class:`ManifestNotFoundError`,
+    :class:`ManifestPermissionError`) give finer-grained audit info.
+    """
+
+
+class ManifestSchemaError(ManifestError):
     """Raised when ``projects.manifest.yaml`` fails schema validation.
 
     Maps to preindex CLI exit code ``MANIFEST_ERROR`` (2).
     """
 
 
-class ManifestNotFoundError(DomainError):
+class ManifestNotFoundError(ManifestError):
     """Raised when the manifest path does not exist on disk.
 
     Maps to preindex CLI exit code ``MANIFEST_ERROR`` (2).
     """
 
 
-class ManifestPermissionError(DomainError):
+class ManifestPermissionError(ManifestError):
     """Raised when the manifest file exists but is unreadable.
 
     Maps to preindex CLI exit code ``MANIFEST_ERROR`` (2).
     """
 
 
-class ManifestProjectNotFoundError(DomainError):
+class ManifestProjectNotFoundError(ManifestError):
     """Raised when an explicit ``--project-id`` lookup misses the manifest.
 
     Distinct from :class:`ManifestNotFoundError` (file missing) and

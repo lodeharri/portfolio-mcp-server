@@ -19,14 +19,22 @@ PR2 (``security-layers``) wires the five security adapters:
 * ``rate_limiter`` — :class:`SlowapiRateLimiter` (Layer 5)
 * ``audit`` — :class:`AuditLogger` (Layer 5)
 
-The remaining placeholders (``embedding``, ``vector_store``, ``llm``,
-``preindex_use_case``, ``search_use_case``, ``list_projects_use_case``)
-stay ``None`` until PR3 / 002-mcp-tools land.
+PR3 (``preindex-pipeline``) wires the remaining adapters:
+
+* ``embedding`` — :class:`MockEmbeddingAdapter` (deterministic) when
+  ``use_mock_gemini=True``, otherwise :class:`GeminiEmbeddingAdapter`.
+* ``llm`` — :class:`MockLlmAdapter` (or :class:`GeminiLlmAdapter`).
+* ``vector_store`` — :class:`SqliteVecStore` over the configured DB.
+
+And wires the preindex use case:
+
+* ``preindex_use_case`` — :class:`IndexProjectUseCase` (PR3 scope).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from mcp_server.application.ports.embedding import EmbeddingPort
 from mcp_server.application.ports.llm import LLMPort
@@ -34,8 +42,23 @@ from mcp_server.application.ports.manifest import ManifestPort
 from mcp_server.application.ports.rate_limiter import RateLimiterPort
 from mcp_server.application.ports.secret_scanner import SecretScannerPort
 from mcp_server.application.ports.vector_store import VectorStorePort
+from mcp_server.application.use_cases.index_project import IndexProjectUseCase
 from mcp_server.config import AppConfig, load_config
+from mcp_server.domain.exceptions import (
+    ManifestError,
+    PreindexExitCode,
+)
+from mcp_server.infrastructure.adapters.gemini_embedding import (
+    GeminiEmbeddingAdapter,
+    MockEmbeddingAdapter,
+)
+from mcp_server.infrastructure.adapters.gemini_llm import (
+    GeminiLlmAdapter,
+    MockLlmAdapter,
+)
+from mcp_server.infrastructure.adapters.sqlite_vec_store import SqliteVecStore
 from mcp_server.infrastructure.adapters.yaml_manifest import YamlManifestAdapter
+from mcp_server.infrastructure.db.connection import open_db
 from mcp_server.security.audit import AuditLogger
 from mcp_server.security.gitleaks_scanner import GitleaksScanner
 from mcp_server.security.output_sanitizer import OutputSanitizer
@@ -48,21 +71,22 @@ class Composition:
 
     Frozen so it cannot be mutated mid-request (ADR-001 follow-up).
     Each field carries the wired adapter instance OR ``None`` when the
-    adapter has not yet been implemented (PR3 / 002-mcp-tools).
+    adapter has not yet been implemented (PR4 / 002-mcp-tools).
 
     Fields:
 
-    * ``config`` — typed :class:`AppConfig` (always populated)
-    * ``manifest`` — :class:`ManifestPort` — PR2 (Layer 1)
-    * ``embedding`` — :class:`EmbeddingPort` — PR3
-    * ``secret_scanner`` — :class:`SecretScannerPort` — PR2 (Layer 2)
-    * ``vector_store`` — :class:`VectorStorePort` — PR3
-    * ``rate_limiter`` — :class:`RateLimiterPort` — PR2 (Layer 5)
-    * ``audit`` — :class:`AuditLogger` — PR2 (Layer 5)
-    * ``sanitizer`` — :class:`OutputSanitizer` — PR2 (Layer 3)
-    * ``preindex_use_case`` — PR3
-    * ``search_use_case`` — 002-mcp-tools
-    * ``list_projects_use_case`` — 002-mcp-tools
+    * ``config`` — typed :class:`AppConfig` (always populated).
+    * ``manifest`` — :class:`ManifestPort` — PR2 (Layer 1).
+    * ``embedding`` — :class:`EmbeddingPort` — PR3.
+    * ``secret_scanner`` — :class:`SecretScannerPort` — PR2 (Layer 2).
+    * ``vector_store`` — :class:`VectorStorePort` — PR3.
+    * ``llm`` — :class:`LLMPort` — PR3.
+    * ``rate_limiter`` — :class:`RateLimiterPort` — PR2 (Layer 5).
+    * ``audit`` — :class:`AuditLogger` — PR2 (Layer 5).
+    * ``sanitizer`` — :class:`OutputSanitizer` — PR2 (Layer 3).
+    * ``preindex_use_case`` — :class:`IndexProjectUseCase` — PR3.
+    * ``search_use_case`` — 002-mcp-tools (left as ``None``).
+    * ``list_projects_use_case`` — 002-mcp-tools (left as ``None``).
     """
 
     config: AppConfig
@@ -79,59 +103,105 @@ class Composition:
     list_projects_use_case: object | None
 
 
-def create_composition(config: AppConfig | None = None) -> Composition:
+def create_composition(
+    config: AppConfig | None = None,
+    *,
+    use_mock_gemini: bool | None = None,
+) -> Composition:
     """Build the eager-wired composition root (ADR-001).
 
     Args:
         config: optional :class:`AppConfig`. When ``None``, calls
             :func:`mcp_server.config.load_config` to read env vars once.
+        use_mock_gemini: explicit override for the embedding/LLM
+            adapter pair. When ``None`` (default), the function decides
+            based on ``config.gemini_api_key``: present → real adapter,
+            absent → mock adapter.
 
     Returns:
-        A frozen :class:`Composition` instance. Calling this function twice
-        returns two distinct instances — there is no module-level cache
-        (testability + isolation guarantee from ADR-001).
+        A frozen :class:`Composition` instance with all PR3 adapters
+        wired (embedding, vector_store, llm) plus the preindex use case.
 
     Raises:
-        pydantic.ValidationError: when env vars are invalid (propagated
-            from :func:`load_config`).
+        ManifestError: when the manifest is missing or fails schema
+            validation. Propagated by ``YamlManifestAdapter.load()``
+            which the composition root calls eagerly.
+        mcp_server.domain.exceptions.SchemaError: when the bundled
+            ``schema.sql`` is missing or unreadable.
     """
     if config is None:
         config = load_config()
 
     # Eager wiring: construct every adapter up front so adapter init
-    # errors surface during create_app(), not at first request.
+    # errors surface during ``create_composition()``, not at first
+    # request / first CLI tick.
     audit = AuditLogger()
     manifest = YamlManifestAdapter(config.manifest_path)
     # Eagerly load + validate the manifest so the app fails fast on a
     # missing or schema-invalid file. Per the security-layers spec a
     # manifest without declared projects (or one that doesn't exist)
-    # MUST abort the preindex pipeline with a non-zero exit code.
-    # Surfacing the exception here propagates it to ``create_app`` and
+    # MUST abort the preindex pipeline with a non-zero exit code —
+    # surfacing the exception here propagates it to ``create_app`` and
     # tests, which keeps the failure mode consistent with the
     # inspectable Composition error path.
     manifest.load()
+
     secret_scanner = GitleaksScanner(audit=audit)
-    # The sanitizer is wired with the audit logger so every redaction
-    # emits an ``output.redacted`` event at the Layer 3 boundary.
-    # T2.13 HTTP middleware (PR3) and the preindex use case share the
-    # same sanitizer instance and inherit the audit emission.
     sanitizer = OutputSanitizer(audit=audit)
     rate_limiter = SlowapiRateLimiter(limit="30/minute", audit=audit)
+
+    # PR3: vector store.
+    db_path = _db_path_override(config) or (config.data_dir / "index.sqlite")
+    conn = open_db(db_path)
+    vector_store = SqliteVecStore(conn)
+
+    # PR3: embedding + LLM adapter pair (mock or real).
+    if use_mock_gemini is None:
+        use_mock_gemini = not bool((config.gemini_api_key or "").strip())
+    if use_mock_gemini:
+        embedding = MockEmbeddingAdapter(embedding_dim=config.embedding_dim)
+        llm: LLMPort | None = MockLlmAdapter()
+    else:
+        api_key = config.gemini_api_key or ""
+        embedding = GeminiEmbeddingAdapter(api_key=api_key)
+        llm = GeminiLlmAdapter(api_key=api_key)
+
+    # PR3: preindex use case.
+    preindex_use_case = IndexProjectUseCase(
+        manifest=manifest,
+        embedding=embedding,  # type: ignore[arg-type]
+        vector_store=vector_store,  # type: ignore[arg-type]
+        scanner=secret_scanner,
+        audit=audit,
+    )
 
     return Composition(
         config=config,
         manifest=manifest,
-        embedding=None,  # wired in PR3 (GeminiEmbeddingAdapter)
+        embedding=embedding,
         secret_scanner=secret_scanner,
-        vector_store=None,  # wired in PR3 (SqliteVecStore)
-        llm=None,  # wired in 002-mcp-tools (GeminiLLMAdapter)
+        vector_store=vector_store,
+        llm=llm,
         rate_limiter=rate_limiter,
         audit=audit,
         sanitizer=sanitizer,
-        preindex_use_case=None,  # wired in PR3
-        search_use_case=None,  # wired in 002-mcp-tools
-        list_projects_use_case=None,  # wired in 002-mcp-tools
+        preindex_use_case=preindex_use_case,
+        search_use_case=None,  # 002-mcp-tools
+        list_projects_use_case=None,  # 002-mcp-tools
     )
+
+
+def _db_path_override(config: AppConfig) -> Path | None:
+    """Return the override DB path if the CLI passed one, else ``None``.
+
+    The CLI communicates the override through a private ``_db_path_override``
+    attribute (set via ``model_copy``); composition reads it here. This is
+    the ONLY escape hatch from the typed config — kept narrow.
+    """
+    raw = getattr(config, "_db_path_override", None)
+    if isinstance(raw, Path):
+        return raw
+    return None
 
 
 # Alias matching design.md and tasks.md. ``compose`` reads more naturally
@@ -140,4 +210,13 @@ def create_composition(config: AppConfig | None = None) -> Composition:
 compose = create_composition
 
 
-__all__ = ["Composition", "compose", "create_composition"]
+__all__ = [
+    "Composition",
+    "compose",
+    "create_composition",
+    "PreindexExitCode",  # re-export for legacy callers
+]
+
+# Re-export so CLI imports ``PreindexExitCode`` from composition if it
+# prefers; the canonical home is ``mcp_server.domain.exceptions``.
+_ = ManifestError  # silence linter about unused import (intentional re-export)

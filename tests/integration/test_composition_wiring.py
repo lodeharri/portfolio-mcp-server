@@ -62,31 +62,40 @@ class TestCompositionWiringContract:
         assert isinstance(comp.audit, AuditLogger)
 
 
-class TestCompositionPlaceholderContract:
-    """The preindex-related and future MCP-tool fields remain ``None``."""
+class TestCompositionWiredAdaptersContract:
+    """After PR3 the previously-``None`` adapter fields are real adapters.
 
-    def test_embedding_is_none(self) -> None:
-        comp = create_composition(AppConfig())
-        assert comp.embedding is None
+    The two future-MCP-tool fields stay ``None`` until 002-mcp-tools.
+    """
 
-    def test_vector_store_is_none(self) -> None:
+    def test_embedding_is_real(self) -> None:
         comp = create_composition(AppConfig())
-        assert comp.vector_store is None
+        # Without an API key in tests, the composition falls back to the
+        # mock adapter. Either way the field is NOT ``None``.
+        assert comp.embedding is not None
 
-    def test_llm_is_none(self) -> None:
-        comp = create_composition(AppConfig())
-        assert comp.llm is None
+    def test_vector_store_is_real(self) -> None:
+        from mcp_server.infrastructure.adapters.sqlite_vec_store import SqliteVecStore
 
-    def test_preindex_use_case_is_none(self) -> None:
         comp = create_composition(AppConfig())
-        assert comp.preindex_use_case is None
+        assert isinstance(comp.vector_store, SqliteVecStore)
+
+    def test_llm_is_real(self) -> None:
+        comp = create_composition(AppConfig())
+        assert comp.llm is not None
+
+    def test_preindex_use_case_is_real(self) -> None:
+        comp = create_composition(AppConfig())
+        assert comp.preindex_use_case is not None
 
     def test_search_use_case_is_none(self) -> None:
         comp = create_composition(AppConfig())
+        # Future MCP tool — not part of 001-bootstrap.
         assert comp.search_use_case is None
 
     def test_list_projects_use_case_is_none(self) -> None:
         comp = create_composition(AppConfig())
+        # Future MCP tool — not part of 001-bootstrap.
         assert comp.list_projects_use_case is None
 
 
