@@ -1,10 +1,19 @@
 """FastAPI app factory — the composition root entry point.
 
 ``create_app()`` is the only function that wires the composition root,
-the ``/healthz`` route, and (in change after this PR) the FastMCP sub-app
-mount at ``/mcp``. It is the application factory referenced by
-``pyproject.toml``'s ``[project.scripts] mcp-server = "mcp_server.app:run"``
-console script.
+the ``/healthz`` route, and the FastMCP sub-app mount at ``/mcp``. It is
+the application factory referenced by ``pyproject.toml``'s
+``[project.scripts] mcp-server = "mcp_server.app:run"`` console script.
+
+Wiring pattern (per FastMCP 3.2.4+ docs):
+
+    mcp_app = mcp.http_app(path="/")
+    app = FastAPI(lifespan=mcp_app.lifespan)
+    app.mount("/mcp", mcp_app)
+
+The parent FastAPI MUST share the MCP lifespan so the sub-app initializes
+its session manager on startup. ``FastMCP.mount(app, path)`` does NOT
+exist on this version — only the ``app.mount(...)`` direction works.
 
 ``run()`` is a thin wrapper over :func:`uvicorn.run` that binds to
 ``0.0.0.0:$PORT`` with ``--workers 1``. Workers=1 is mandatory for the
@@ -19,6 +28,7 @@ from fastapi import FastAPI
 from mcp_server.composition import create_composition
 from mcp_server.config import AppConfig, load_config
 from mcp_server.interfaces.http.healthz import build_healthz_router
+from mcp_server.interfaces.mcp.server import mcp
 
 
 def create_app(config: AppConfig | None = None) -> FastAPI:
@@ -27,9 +37,11 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     Steps:
 
     1. Load config from env vars (or accept an injected config for tests).
-    2. Construct the parent FastAPI.
-    3. Wire the composition root into ``app.state.composition``.
-    4. Mount ``/healthz`` via the healthz router.
+    2. Build the FastMCP sub-app via ``mcp.http_app(path="/")``.
+    3. Construct the parent FastAPI with the MCP lifespan.
+    4. Wire the composition root into ``app.state.composition``.
+    5. Mount ``/healthz`` via the healthz router.
+    6. Mount the MCP sub-app at ``/mcp``.
 
     Each call returns a fresh, independently usable FastAPI instance —
     there is no module-level cache beyond the optional ``app`` constant
@@ -38,13 +50,22 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     if config is None:
         config = load_config()
 
-    app = FastAPI(title="mcp-server-playground")
+    # FastMCP 3.2.4+ mount pattern. The parent FastAPI MUST share the MCP
+    # lifespan so the sub-app initializes its session manager on startup.
+    mcp_app = mcp.http_app(path="/")
+    app = FastAPI(
+        title="mcp-server-playground",
+        lifespan=mcp_app.lifespan,
+    )
 
     # Composition root — single wiring point (ADR-001).
     app.state.composition = create_composition(config)
 
     # Operational probe.
     app.include_router(build_healthz_router())
+
+    # MCP sub-app mount.
+    app.mount("/mcp", mcp_app)
 
     return app
 
