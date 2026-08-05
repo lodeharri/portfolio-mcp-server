@@ -86,7 +86,8 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # Pre-bake the vector index. The BuildKit secret mount guarantees
 # GEMINI_API_KEY is NEVER written to a layer — it is exposed only as
 # the file /run/secrets/gemini during this RUN, then discarded.
-# If BAKE_INDEX=off, the RUN is skipped (faster CI).
+# If BAKE_INDEX=on with no API key, OR if BAKE_INDEX=off, we fall back
+# to --mock-gemini so the schema-only-index.sqlite is always produced.
 # If GEMINI_API_KEY is unset, preindex auto-falls back to --mock-gemini
 # (documented in src/mcp_server/interfaces/cli/preindex.py).
 RUN mkdir -p /build/data
@@ -94,14 +95,21 @@ RUN mkdir -p /build/data
 # not inside the shell. The mount is scoped to the entire RUN, so
 # when BAKE_INDEX=off the secret is still mounted but never read.
 RUN --mount=type=secret,id=gemini \
-    if [ "$BAKE_INDEX" = "on" ]; then \
+    if [ "$BAKE_INDEX" = "on" ] && [ -s /run/secrets/gemini ]; then \
         GEMINI_API_KEY=$(cat /run/secrets/gemini) \
             python -m mcp_server.interfaces.cli.preindex \
                 --manifest /build/config/projects.manifest.yaml \
                 --db /build/data/index.sqlite \
-            || echo "WARN: preindex skipped (no API key or non-fatal failure)"; \
+                --quiet \
+            || echo "WARN: preindex failed — runtime will start with empty vector store"; \
     else \
-        echo "BAKE_INDEX=off — skipping preindex"; \
+        echo "BAKE_INDEX=off (or no API key) — creating empty vector store with schema"; \
+        python -m mcp_server.interfaces.cli.preindex \
+            --manifest /build/config/projects.manifest.yaml \
+            --db /build/data/index.sqlite \
+            --mock-gemini \
+            --quiet \
+        || echo "WARN: empty vector store creation failed"; \
     fi
 
 # ---------- Stage 2: runtime ----------
@@ -127,14 +135,13 @@ COPY --chown=mcp:mcp --from=builder /build/config ./config
 COPY --chown=mcp:mcp --from=builder /build/pyproject.toml ./
 COPY --chown=mcp:mcp --from=builder /build/README.md ./
 
-# Copy the baked index if it exists. The shell guard makes the COPY
-# optional: if BAKE_INDEX=off or preindex errored, the runtime image
-# still builds — the runtime server boots with an empty vector store
+# Copy the baked index. The preindex step above always produces
+# /build/data/index.sqlite (real OR empty), so a plain COPY works.
+# The runtime server boots with an empty vector store if BAKE_INDEX=off
 # and /healthz returns 200 (the index is a soft dependency for tools,
 # not for the probe). See spec scenario "Build without GEMINI_API_KEY
 # still succeeds".
-COPY --chown=mcp:mcp --from=builder /build/data/index.sqlite ./data/index.sqlite 2>/dev/null \
-    || echo "WARN: no baked index — runtime will start with an empty vector store"
+COPY --chown=mcp:mcp --from=builder /build/data/index.sqlite ./data/index.sqlite
 
 USER mcp
 

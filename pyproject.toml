@@ -29,7 +29,8 @@ dependencies = [
     "fastmcp>=3.2.4",                    # Python MCP SDK server (latest, verified 2026-08)
     "jinja2>=3.1.4",                     # Templates for the playground
     "pydantic>=2.9.0",                   # Data validation
-    "pydantic-ai>=2.0.0",                # Agent framework (playground chat only)
+    "pydantic-ai-slim>=2.0.0",           # Agent framework slim (no anthropic/openai extra deps)
+    "pydantic-ai[google]>=2.0.0",        # Pulls the Google provider model for pydantic-ai
     "google-generativeai>=0.8.0",        # Gemini SDK (free tier: 2.0 Flash + text-embedding-004)
     "slowapi>=0.1.9",                    # Rate limiting (~30 req/min/IP)
     "structlog>=24.1.0",                 # Structured JSON logging for security/audit.py
@@ -63,6 +64,13 @@ preindex = "mcp_server.interfaces.cli.preindex:cli"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+# Include non-Python data files in the wheel so `pip install` ships them
+# inside the venv package directory. Without this, `schema.sql` is not
+# found at runtime — the connection helper looks for it next to
+# `connection.py` inside the installed package.
+[tool.setuptools.package-data]
+mcp_server = ["infrastructure/db/schema.sql"]
 
 [tool.ruff]
 line-length = 100
