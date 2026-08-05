@@ -349,7 +349,7 @@ class TestYamlManifestAdapterErrors:
 
         project_root = tmp_path / "proj"
         project_root.mkdir()
-        body = f"""
+        body = """
             schema_version: 1
             server:
               name: portfolio-mcp-server
