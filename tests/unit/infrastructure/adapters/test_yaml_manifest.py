@@ -53,8 +53,10 @@ def _default_manifest_body(project_root: Path) -> str:
           include_extensions:
             - .py
             - .md
+            - .js
           exclude_paths:
             - node_modules
+            - dist
 
         projects:
           - id: my-project
@@ -63,6 +65,7 @@ def _default_manifest_body(project_root: Path) -> str:
             description: test project
             include_subdirs:
               - src
+              - backend
             exclude_subdirs:
               - .git
         """
@@ -222,6 +225,57 @@ class TestYamlManifestAdapterIsPathIndexed:
         # Path resolution normalises `..` — the resolved target is outside
         # the project root, so the adapter MUST deny it.
         assert adapter.is_path_indexed(traversal) is False
+
+    def test_path_under_global_excluded_path_returns_false(self, tmp_path: Path) -> None:
+        """Global ``indexing.exclude_paths`` is enforced even when a
+        project's ``include_subdirs`` is broad.
+
+        Pre-PR2 fix: ``is_path_indexed`` only checked
+        ``project.exclude_subdirs``. A path such as
+        ``<project>/backend/node_modules/leak.py`` was indexed even
+        though ``node_modules`` is globally listed in the manifest's
+        ``indexing.exclude_paths``. The shipped manifest declares
+        ``node_modules`` globally; the spec requires the adapter to
+        enforce that.
+        """
+        from mcp_server.infrastructure.adapters.yaml_manifest import (
+            YamlManifestAdapter,
+        )
+
+        project_root = tmp_path / "proj"
+        (project_root / "backend" / "node_modules").mkdir(parents=True)
+        manifest_path = _write_manifest(tmp_path, _default_manifest_body(project_root))
+
+        adapter = YamlManifestAdapter(manifest_path)
+        adapter.load()
+
+        # ``backend`` is the project's include_subdir, but the manifest
+        # also lists ``node_modules`` globally. The adapter MUST deny.
+        nested = project_root / "backend" / "node_modules" / "leak.py"
+        assert adapter.is_path_indexed(nested) is False
+
+    def test_path_under_global_excluded_path_nested_deep_returns_false(
+        self, tmp_path: Path
+    ) -> None:
+        """Global exclusion applies to nested occurrences too.
+
+        ``indexing.exclude_paths: [dist]`` MUST deny ``src/dist/foo.py``
+        just as it denies ``backend/dist/foo.py`` — the global list is
+        NOT scoped to a particular project.
+        """
+        from mcp_server.infrastructure.adapters.yaml_manifest import (
+            YamlManifestAdapter,
+        )
+
+        project_root = tmp_path / "proj"
+        (project_root / "src" / "dist").mkdir(parents=True)
+        manifest_path = _write_manifest(tmp_path, _default_manifest_body(project_root))
+
+        adapter = YamlManifestAdapter(manifest_path)
+        adapter.load()
+
+        nested = project_root / "src" / "dist" / "bundle.js"
+        assert adapter.is_path_indexed(nested) is False
 
 
 # ---------------------------------------------------------------------------
