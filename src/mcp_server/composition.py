@@ -102,6 +102,14 @@ def create_composition(config: AppConfig | None = None) -> Composition:
     # errors surface during create_app(), not at first request.
     audit = AuditLogger()
     manifest = YamlManifestAdapter(config.manifest_path)
+    # Eagerly load + validate the manifest so the app fails fast on a
+    # missing or schema-invalid file. Per the security-layers spec a
+    # manifest without declared projects (or one that doesn't exist)
+    # MUST abort the preindex pipeline with a non-zero exit code.
+    # Surfacing the exception here propagates it to ``create_app`` and
+    # tests, which keeps the failure mode consistent with the
+    # inspectable Composition error path.
+    manifest.load()
     secret_scanner = GitleaksScanner(audit=audit)
     sanitizer = OutputSanitizer()
     rate_limiter = SlowapiRateLimiter(limit="30/minute", audit=audit)
