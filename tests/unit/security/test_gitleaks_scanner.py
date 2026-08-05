@@ -99,6 +99,86 @@ class TestGitleaksScannerExitCodeMapping:
             verdict = scanner.scan("mystery", source=str(tmp_path / "x.py"))
         assert verdict == ScanVerdict.BLOCKED
 
+    def test_malformed_json_with_exit_0_returns_blocked_fail_closed(
+        self, tmp_path: Path
+    ) -> None:
+        """Malformed JSON on stdout MUST return BLOCKED (fail-closed).
+
+        Pre-PR2 fix: ``result.stdout`` was never parsed. A gitleaks
+        invocation that returned exit code 0 with malformed JSON to
+        stdout was treated as ``CLEAN``. The spec requires fail-closed
+        behaviour per the "gitleaks returns malformed JSON / non-zero
+        exit not in the known set" error edge case.
+        """
+        from mcp_server.security.gitleaks_scanner import GitleaksScanner
+
+        scanner = GitleaksScanner()
+        # exit=0 (looks "clean") but stdout is meaningless text — the
+        # scanner MUST NOT trust the exit code alone.
+        malformed = "this is not JSON at all { broken"
+        with (
+            patch("shutil.which", return_value="/usr/local/bin/gitleaks"),
+            patch(
+                "subprocess.run", return_value=_completed_process(0, stdout=malformed)
+            ),
+        ):
+            verdict = scanner.scan("maybe-clean", source=str(tmp_path / "x.py"))
+        assert verdict == ScanVerdict.BLOCKED
+
+    def test_empty_stdout_with_exit_0_returns_blocked_fail_closed(
+        self, tmp_path: Path
+    ) -> None:
+        """Empty stdout with exit 0 is also malformed — fail-closed.
+
+        A well-formed gitleaks run with no findings emits an empty array
+        (``[]``). An empty string is NOT a valid gitleaks payload and
+        MUST be treated as a parse failure.
+        """
+        from mcp_server.security.gitleaks_scanner import GitleaksScanner
+
+        scanner = GitleaksScanner()
+        with (
+            patch("shutil.which", return_value="/usr/local/bin/gitleaks"),
+            patch("subprocess.run", return_value=_completed_process(0, stdout="")),
+        ):
+            verdict = scanner.scan("ambiguous", source=str(tmp_path / "x.py"))
+        assert verdict == ScanVerdict.BLOCKED
+
+    def test_valid_no_findings_json_with_exit_0_returns_clean(
+        self, tmp_path: Path
+    ) -> None:
+        """Valid JSON ``[]`` (no findings) with exit 0 stays CLEAN."""
+        from mcp_server.security.gitleaks_scanner import GitleaksScanner
+
+        scanner = GitleaksScanner()
+        with (
+            patch("shutil.which", return_value="/usr/local/bin/gitleaks"),
+            patch("subprocess.run", return_value=_completed_process(0, stdout="[]")),
+        ):
+            verdict = scanner.scan("definitely clean", source=str(tmp_path / "x.py"))
+        assert verdict == ScanVerdict.CLEAN
+
+    def test_valid_findings_json_with_exit_1_returns_blocked(
+        self, tmp_path: Path
+    ) -> None:
+        """Valid findings JSON with exit 1 confirms BLOCKED."""
+        from mcp_server.security.gitleaks_scanner import GitleaksScanner
+
+        scanner = GitleaksScanner()
+        findings_payload = (
+            '[{"Description":"AWS","Secret":"AKIAIOSFODNN7EXAMPLE",'
+            '"File":"x.py","StartLine":1,"EndLine":1}]'
+        )
+        with (
+            patch("shutil.which", return_value="/usr/local/bin/gitleaks"),
+            patch(
+                "subprocess.run",
+                return_value=_completed_process(1, stdout=findings_payload),
+            ),
+        ):
+            verdict = scanner.scan("AKIAIOSFODNN7EXAMPLE", source=str(tmp_path / "x.py"))
+        assert verdict == ScanVerdict.BLOCKED
+
 
 class TestGitleaksScannerSubprocessSafety:
     """``scan()`` invokes subprocess safely (threat-matrix row "Subprocess exec")."""
