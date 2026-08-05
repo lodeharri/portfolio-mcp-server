@@ -203,3 +203,117 @@ class TestOutputSanitizerThreadSafety:
         rb = b.sanitize(text, source="b")
         assert ra.redacted_text == rb.redacted_text
         assert len(ra.incidents) == len(rb.incidents)
+
+
+# ---------------------------------------------------------------------------
+# Audit emission — every redaction MUST produce an `output.redacted`
+# audit event. This is the Layer 5 audit contract for Layer 3.
+# ---------------------------------------------------------------------------
+
+
+class TestOutputSanitizerEmitsRedactedAuditEvent:
+    """``OutputSanitizer`` listens to ``AuditLogger`` and emits
+    ``output.redacted`` whenever redactions occur.
+
+    The audit logger is OPTIONAL at construction time so the existing
+    no-audit call sites keep working. When injected, every successful
+    ``sanitize`` that returns at least one incident MUST trigger
+    ``audit.warn("output.redacted", ...)`` with the matched pattern and
+    the source label.
+
+    This guarantees the Layer 5 audit contract is satisfied at the
+    adapter boundary — T2.13 HTTP middleware (PR3) is free to use the
+    same sanitizer without duplicating the audit call.
+    """
+
+    def test_no_audit_when_no_incidents(self) -> None:
+        """Clean text does NOT emit an audit event (nothing to redact)."""
+        from mcp_server.security.output_sanitizer import OutputSanitizer
+
+        captured: list[tuple[str, dict]] = []
+
+        class _Audit:
+            def warn(self, event: str, **fields: object) -> None:
+                captured.append((event, fields))
+
+        sanitizer = OutputSanitizer(audit=_Audit())
+        result = sanitizer.sanitize("clean text", source="tool-x")
+        assert result.incidents == []
+        assert captured == []
+
+    def test_single_aws_key_emits_output_redacted_event(self) -> None:
+        from mcp_server.security.output_sanitizer import OutputSanitizer
+
+        captured: list[tuple[str, dict]] = []
+
+        class _Audit:
+            def warn(self, event: str, **fields: object) -> None:
+                captured.append((event, fields))
+
+        sanitizer = OutputSanitizer(audit=_Audit())
+        sanitizer.sanitize("AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE", source="tool-x")
+
+        assert len(captured) == 1
+        event, fields = captured[0]
+        assert event == "output.redacted"
+        assert fields["source"] == "tool-x"
+        assert fields["pattern"] == "aws"
+        assert fields["count"] == 1
+
+    def test_multiple_patterns_emit_one_event_per_call(self) -> None:
+        """One sanitize() call with multiple patterns produces ONE event.
+
+        The event aggregates the count of redactions so the audit log
+        does not flood on finds-heavy payloads. Each unique pattern is
+        reported in a comma-separated ``patterns`` field.
+        """
+        from mcp_server.security.output_sanitizer import OutputSanitizer
+
+        captured: list[tuple[str, dict]] = []
+
+        class _Audit:
+            def warn(self, event: str, **fields: object) -> None:
+                captured.append((event, fields))
+
+        sanitizer = OutputSanitizer(audit=_Audit())
+        text = (
+            "AWS=AKIAIOSFODNN7EXAMPLE GH=ghp_" + "a" * 36 + " OpenAI=sk-" + "b" * 48
+        )
+        sanitizer.sanitize(text, source="mixed")
+
+        assert len(captured) == 1
+        event, fields = captured[0]
+        assert event == "output.redacted"
+        assert fields["source"] == "mixed"
+        assert fields["count"] == 3
+        # The matched patterns list is preserved (sorted, comma-separated).
+        assert "aws" in fields["patterns"]
+        assert "github" in fields["patterns"]
+        assert "openai" in fields["patterns"]
+
+    def test_no_audit_event_when_audit_not_provided(self) -> None:
+        """Constructing without an audit logger MUST NOT raise."""
+        from mcp_server.security.output_sanitizer import OutputSanitizer
+
+        sanitizer = OutputSanitizer()  # no audit
+        # Should not raise.
+        result = sanitizer.sanitize("AWS=AKIAIOSFODNN7EXAMPLE", source="quiet")
+        assert result.incidents  # still redacted — just no audit
+
+    def test_audit_emit_does_not_swallow_exceptions_silently(self) -> None:
+        """If the audit logger raises, the sanitizer MUST propagate.
+
+        Hiding a logging failure would defeat the audit contract. The
+        caller (composition root / middleware) is responsible for
+        deciding whether to fail-closed; the sanitizer never papers
+        over the audit pipeline.
+        """
+        from mcp_server.security.output_sanitizer import OutputSanitizer
+
+        class _ExplodingAudit:
+            def warn(self, event: str, **fields: object) -> None:
+                raise RuntimeError("audit pipeline down")
+
+        sanitizer = OutputSanitizer(audit=_ExplodingAudit())
+        with pytest.raises(RuntimeError, match="audit pipeline down"):
+            sanitizer.sanitize("AWS=AKIAIOSFODNN7EXAMPLE", source="boom")
