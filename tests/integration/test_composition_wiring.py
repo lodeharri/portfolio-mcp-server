@@ -1,19 +1,15 @@
-"""Integration tests for the composition root — PR2 wiring contract.
+"""Integration tests for the composition root — PR2 + 002-mcp-tools PR1.
 
-After PR2, ``create_composition()`` MUST return a
-:class:`mcp_server.composition.Composition` whose five security adapter
-fields are real instances (not ``None`` placeholders):
+After 002-mcp-tools PR1, ``create_composition()`` MUST additionally
+wire the two read-only MCP tool use cases:
 
-* ``manifest`` — :class:`YamlManifestAdapter`
-* ``secret_scanner`` — :class:`GitleaksScanner`
-* ``sanitizer`` — :class:`OutputSanitizer`
-* ``rate_limiter`` — :class:`SlowapiRateLimiter`
-* ``audit`` — :class:`AuditLogger`
+* ``list_projects_use_case`` — :class:`ListProjectsUseCase`
+* ``search_use_case`` — :class:`SearchCodeUseCase`
 
-The three preindex-related fields (``embedding``, ``vector_store``,
-``preindex_use_case``) and the two future MCP-tool fields
-(``search_use_case``, ``list_projects_use_case``) remain ``None`` until
-PR3 / 002-mcp-tools land.
+These were ``None`` placeholders in 001-bootstrap. The remaining four
+MCP tool use cases (``explain_architecture``, ``summarize_readme``,
+``get_architecture_diagram``, ``ask_portfolio``) and the Pydantic AI
+``Agent`` stay ``None`` until 002-mcp-tools PR2 / PR3 land.
 
 The hexagonal invariant test (``test_hexagonal_invariants.py``) ALSO
 asserts ``composition.py`` is the only module importing both adapters
@@ -88,15 +84,19 @@ class TestCompositionWiredAdaptersContract:
         comp = create_composition(AppConfig())
         assert comp.preindex_use_case is not None
 
-    def test_search_use_case_is_none(self) -> None:
-        comp = create_composition(AppConfig())
-        # Future MCP tool — not part of 001-bootstrap.
-        assert comp.search_use_case is None
+    def test_search_use_case_is_real(self) -> None:
+        from mcp_server.application.use_cases.search_code import SearchCodeUseCase
 
-    def test_list_projects_use_case_is_none(self) -> None:
         comp = create_composition(AppConfig())
-        # Future MCP tool — not part of 001-bootstrap.
-        assert comp.list_projects_use_case is None
+        # 002-mcp-tools PR1: real instance, no longer a ``None`` placeholder.
+        assert isinstance(comp.search_use_case, SearchCodeUseCase)
+
+    def test_list_projects_use_case_is_real(self) -> None:
+        from mcp_server.application.use_cases.list_projects import ListProjectsUseCase
+
+        comp = create_composition(AppConfig())
+        # 002-mcp-tools PR1: real instance, no longer a ``None`` placeholder.
+        assert isinstance(comp.list_projects_use_case, ListProjectsUseCase)
 
 
 class TestCompositionIsFrozen:
