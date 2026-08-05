@@ -343,7 +343,12 @@ class TestOutputSanitization:
 
         out = uc.execute(Req(query="q"))
 
-        assert "api_key = [REDACTED]" in out[0]["content"]
+        # The whole ``api_key = value`` match is replaced with the
+        # placeholder (the sanitizer's re.sub replaces the full match,
+        # consistent with the AWS / GitHub / OpenAI / Gemini patterns).
+        assert "api_key" not in out[0]["content"]
+        assert "abc123secret" not in out[0]["content"]
+        assert "[REDACTED]" in out[0]["content"]
 
     def test_metadata_fields_pass_through_unchanged(self) -> None:
         """``chunk_hash``/``file_path``/line numbers/``score``/``project_id``

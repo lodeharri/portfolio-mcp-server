@@ -36,6 +36,7 @@ from mcp_server.application.ports.secret_scanner import SecretScannerPort
 from mcp_server.application.ports.vector_store import VectorStorePort
 from mcp_server.application.use_cases.index_project import IndexProjectUseCase
 from mcp_server.application.use_cases.list_projects import ListProjectsUseCase
+from mcp_server.application.use_cases.search_code import SearchCodeUseCase
 from mcp_server.config import AppConfig, load_config
 from mcp_server.domain.exceptions import (
     ManifestError,
@@ -95,7 +96,7 @@ class Composition:
     sanitizer: OutputSanitizer
     preindex_use_case: object | None
     list_projects_use_case: ListProjectsUseCase | None
-    search_use_case: object | None
+    search_use_case: SearchCodeUseCase | None
 
 
 def create_composition(
@@ -173,11 +174,20 @@ def create_composition(
 
     # 002-mcp-tools PR1: ``list_projects`` MCP tool use case. No LLM
     # call; just manifest + optional vector_store for chunk counts.
-    # The search use case lands in a separate commit (keeps the
-    # RED/GREEN cycle clean per work-unit-commits).
     list_projects_use_case = ListProjectsUseCase(
         manifest=manifest,
         vector_store=vector_store,
+        sanitizer=sanitizer,
+        audit=audit,
+    )
+
+    # 002-mcp-tools PR1: ``search_code`` MCP tool use case. Embeds
+    # the query, runs vector search, sanitizes chunk content. The
+    # embedding adapter is REQUIRED here (search has no useful
+    # default without it).
+    search_use_case = SearchCodeUseCase(
+        embedding=embedding,  # type: ignore[arg-type]
+        vector_store=vector_store,  # type: ignore[arg-type]
         sanitizer=sanitizer,
         audit=audit,
     )
@@ -194,7 +204,7 @@ def create_composition(
         sanitizer=sanitizer,
         preindex_use_case=preindex_use_case,
         list_projects_use_case=list_projects_use_case,
-        search_use_case=None,  # 002-mcp-tools PR1 — lands in next commit
+        search_use_case=search_use_case,
     )
 
 
