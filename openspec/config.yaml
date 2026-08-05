@@ -1,0 +1,122 @@
+schema: spec-driven
+
+# Session Preflight (set by user at init; honored by all subsequent SDD phases)
+preflight:
+  pace: interactive               # gatekeeper validation between phases; user approval required
+  artifacts: openspec            # all phase outputs go to openspec/changes/{name}/
+  prs: ask-always                # at apply phase, decide single PR vs chain per change
+  review_budget_lines: 400       # stop for explicit approval above this per change/PR
+
+# Project key (independent of folder name; matches planned GitHub repo)
+project:
+  key: portfolio-mcp-server
+  path: /home/harri/development/projects/portfolio/mcp-server-playground
+  sibling_projects:
+    - finance-coach-latam
+    - landing-page-portfolio
+  portfolio_role: second portfolio piece; Python backend + container deploy + AI infrastructure
+  replaces_pattern: breaks the "Architecture only" pattern of current portfolio
+
+context: |
+  Project: portfolio-mcp-server — Harrison Rodriguez's MCP (Model Context Protocol) server in Python
+  with a built-in web playground for recruiter demo. Sibling to finance-coach-latam and
+  landing-page-portfolio inside the parent portfolio/ folder.
+Stack: Python 3.10.12, FastAPI, FastMCP 3.2.4+ (Python MCP SDK), HTMX + htmx-ws, Jinja2,
+SQLite + sqlite-vec, Gemini 2.0 Flash + text-embedding-004, Pydantic AI 2.0.0+ (playground chat only),
+slowapi, gitleaks (Go binary via subprocess), Pydantic v2. arq/Redis dropped — stateless app,
+no async jobs needed at runtime.
+  Architecture: single FastAPI process serves both the MCP server (FastMCP mounted on a sub-app)
+  and the HTML playground (Jinja2 templates + HTMX). No separate Node process.
+  Testing: pytest + pytest-asyncio + httpx.AsyncClient (unit/integration);
+  Playwright + axe-core (E2E playground).
+  Linting/formatting: ruff (Python) + prettier (Jinja/HTML/JS).
+  Container: Docker multi-stage build; final image target <150 MB.
+Deploy: Primary Fly.io (~$2.02/mo for 256 MB shared VM 24/7). Fly.io free tier was
+discontinued Oct 2024 for new users — $0/mo target no longer realistic for new accounts.
+Deploy is platform-agnostic: same Dockerfile works on Hugging Face Spaces ($0, cold starts),
+Render ($0, sleep), Railway ($5 credit). NO Lambda, NO Fargate.
+Custom domain: optional mcp.lodeharri.dev (~$10-15/year).
+  Cost discipline: $0/month, no paid services ever. Document all free-tier limits.
+
+rules:
+  proposal:
+    - Include rollback plan for any change touching security/, config/projects.manifest.yaml,
+      or the deploy pipeline
+    - Respect cost discipline (Fly.io 256 MB shared VM ~$2/mo, Gemini free RPM/TPM/RPD,
+      GitHub Actions 2000 min/mo free, no paid services unless explicitly approved)
+    - Reference the 5-layer security model in openspec/specs/security/spec.md when relevant
+  specs:
+    - Use Given/When/Then for scenarios
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
+    - Any new tool MUST include a security redaction test scenario
+    - Any change to projects.manifest.yaml MUST include a scoped-indexing test scenario
+  design:
+    - Include sequence diagrams for the MCP request lifecycle and the secret-redaction flow
+    - Document architecture decisions with rationale (ADRs in design.md appendix)
+    - Manifest scoping is the single source of truth for which projects are indexed;
+      never index by directory traversal
+    - Streaming chat over HTMX uses htmx-ws (WebSocket), not Server-Sent Events
+  tasks:
+    - Group by phase, use hierarchical numbering
+    - Keep tasks completable in one session
+    - Tests written first (RED), implementation second (GREEN), refactor third
+    - Pre-commit and CI secret-scan hooks MUST pass before any task is marked [x]
+  apply:
+    guidelines:
+      - Follow FastAPI composition-root pattern: app factory in src/mcp_server/app.py
+      - Never touch os.environ outside src/mcp_server/config.py (typed config only)
+      - Manifest is read-only at runtime; mutating it requires a new SDD change
+      - The 5 security layers are non-negotiable; no tool may bypass redaction
+      - Hexagonal architecture is mandatory: domain (pure) ← application (use cases + ports) ← infrastructure (adapters). Interfaces (mcp/ http/ cli) depend on application only — never on infrastructure directly. composition.py is the ONLY module that wires concrete adapters to use cases.
+      - SOLID: each class has a single responsibility; use cases depend on ports (Protocols), not concrete adapters; ports are segregated (EmbeddingPort, LLMPort, VectorStorePort — not one fat AIProvider port).
+      - Tests mirror src/ structure: tests/unit/{domain,application,infrastructure,security}/
+    tdd: true
+    test_command: "pytest -q"
+    test_command_unit: "pytest tests/unit -q"
+    test_command_integration: "pytest tests/integration -q"
+    test_command_e2e: "playwright test"
+    coverage_command: "pytest --cov=src/mcp_server --cov-report=term-missing"
+  verify:
+    test_command: "pytest -q"
+    test_command_e2e: "playwright test"
+    build_command: "docker build -t mcp-server-playground:verify ."
+    coverage_threshold: 60
+  archive:
+    - Warn before merging destructive deltas (REMOVED requirements, manifest deletions)
+    - Preserve retrospective artifacts under openspec/changes/{name}/
+
+# Testing capabilities (greenfield — runner is declared in pyproject.toml and
+# will be installed in the first apply phase. strict_tdd is true to match house style.)
+testing:
+  strict_tdd: true
+  runner: pytest
+  runner_version: ">=8.0"
+  runner_status: declared-not-installed   # will flip to installed in change 001-bootstrap
+  layers:
+    unit: true
+    integration: true
+    e2e: true
+  coverage:
+    provider: pytest-cov
+    command: "pytest --cov=src/mcp_server --cov-report=term-missing"
+    thresholds:
+      unit:
+        lines: 70
+        functions: 70
+        statements: 70
+        branches: 60
+  linter: ruff
+  formatter_python: ruff format
+  formatter_assets: prettier
+  type_checker: not-configured           # Python; mypy/pyright deferred to later change
+
+# Cross-phase invariants
+invariants:
+  - "5-layer security model is mandatory: manifest scoping + gitleaks preindex + runtime
+    regex sanitization + pre-commit/CI secret scan + rate limit/audit log"
+  - "All MCP tool outputs pass through OutputSanitizer before reaching the client"
+  - "All chunks pass through gitleaks-python before being inserted into the vector index"
+  - "projects.manifest.yaml is the ONLY way to declare what gets indexed"
+  - "Free-tier cost discipline: $0/month, no exceptions"
+  - "Single FastAPI process serves MCP + playground; no second service"
+  - "Container image final size <150 MB"

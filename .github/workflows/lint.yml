@@ -1,0 +1,52 @@
+name: lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  PYTHON_VERSION: "3.10.12"
+
+jobs:
+  ruff:
+    name: ruff (lint + format check)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install ruff
+        run: pip install "ruff==0.7.4"
+
+      - name: Lint
+        run: ruff check src tests
+
+      - name: Format check
+        run: ruff format --check src tests
+
+  prettier:
+    name: prettier (templates/static)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run prettier
+        uses: actions/checkout@v4
+        with:
+          repository: prettier/prettier
+          ref: 4.0.0-alpha.0
+          path: prettier-src
+      - run: |
+          cd prettier-src
+          npm install
+          npx prettier --check '**/*.{html,css,js,ts,tsx,yaml,md}' \
+            --ignore-path .gitignore \
+            --ignore-path ../../.gitignore
+        working-directory: prettier-src

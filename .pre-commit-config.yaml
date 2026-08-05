@@ -1,0 +1,66 @@
+# Project-specific pre-commit hooks.
+# Reference: https://pre-commit.com/
+#
+# Install once with: `pip install pre-commit && pre-commit install`
+# Run on demand: `pre-commit run --all-files`
+#
+# Layer 4 of the 5-layer security model. CI also runs these (see
+# .github/workflows/secret-scan.yml) so a green local run is necessary but
+# not sufficient.
+
+repos:
+  # --- Secret scanning: Layer 4 of the 5-layer model -----------------------
+  # gitleaks runs locally before commit. CI re-runs it (see secret-scan.yml).
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.4
+    hooks:
+      - id: gitleaks
+        name: gitleaks (block on commit)
+        # `--redact` is for the CI report; locally we just want exit 1 on hits.
+        args: ["protect", "--staged", "--no-banner"]
+        pass_filenames: false
+
+  # --- Python: ruff lint + format -----------------------------------------
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.7.4
+    hooks:
+      - id: ruff
+        name: ruff lint
+        args: ["--fix", "--exit-non-zero-on-fix"]
+        files: ^(src|tests)/.*\.py$
+      - id: ruff-format
+        name: ruff format
+        files: ^(src|tests)/.*\.py$
+
+  # --- Frontend assets: prettier (Jinja/HTML/JS/CSS) -----------------------
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v4.0.0-alpha.0
+    hooks:
+      - id: prettier
+        name: prettier (templates/static)
+        types_or: [html, css, javascript, tsx, ts, yaml, markdown, jinja]
+        additional_dependencies:
+          - "[email protected]"
+        # Skip generated files and the pre-computed vector index.
+        exclude: |
+          (?x)^(
+            data/.*|
+            openspec/changes/archive/.*|
+            .*\.min\.(js|css)
+          )$
+
+  # --- Hygiene: trailing whitespace, EOF, YAML/TOML validity ---------------
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        # projects.manifest.yaml uses `description: >` (folded scalar); allow.
+        args: ["--allow-multiple-documents"]
+        exclude: ^openspec/
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=500"]
+      - id: detect-private-key

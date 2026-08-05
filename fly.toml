@@ -1,0 +1,58 @@
+# Fly.io config — $0/month target.
+#
+# Free tier limits honored here:
+#   - Up to 3 shared-cpu-1x @ 256 MB machines
+#   - 160 GB outbound data transfer / month
+#   - 3 GB persistent volume storage (we use SQLite, so no volume needed)
+#   - 1 GB Redis (Upstash) free tier if arq ever needs persistent state
+#
+# Cost discipline: a single 256 MB shared-cpu-1x machine in `auto_stop` mode
+# scales to zero when idle, so the demo only spends credits when a recruiter
+# actually hits the playground.
+
+app = "portfolio-mcp-server"
+primary_region = "iad"   # closest free region to recruiter traffic; change if needed
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  # All real secrets live in `fly secrets set ...`, never in this file.
+  PORT = "8080"
+  PYTHONUNBUFFERED = "1"
+  PYTHONDONTWRITEBYTECODE = "1"
+  # Force-free Gemini model names. Override per-env with `fly secrets set`.
+  GEMINI_MODEL = "gemini-2.0-flash"
+  GEMINI_EMBED_MODEL = "text-embedding-004"
+  # Sentry/log level for the free tier.
+  LOG_LEVEL = "INFO"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"     # scale to zero on idle
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+  protocol = "tcp"
+  # Concurrency tuned for 256 MB shared-cpu-1x. HTMX is chatty, not heavy.
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 50
+    soft_limit = 25
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory = "256mb"
+
+[deploy]
+  # Canary release: 10% of traffic to new machine, monitor, then full cutover.
+  strategy = "canary"
+
+[[services.tcp_checks]]
+  grace_period = "10s"
+  interval = "30s"
+  method = "GET"
+  timeout = "5s"
+  path = "/healthz"

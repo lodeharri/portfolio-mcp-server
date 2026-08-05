@@ -1,0 +1,94 @@
+# projects.manifest.yaml — SINGLE SOURCE OF TRUTH for which projects to index.
+#
+# Any path not listed here is NEVER indexed. This is security Layer 1
+# (manifest-based scoping). scripts/preindex.py reads this file and refuses
+# to index anything outside the declared projects.
+#
+# Sibling projects live under /home/harri/development/projects/portfolio/
+# but this server is intentionally scoped to the two portfolio pieces that
+# are recruiter-facing. Adjust only via a new SDD change.
+
+schema_version: 1
+
+server:
+  name: portfolio-mcp-server
+  version: 0.1.0
+  description: >
+    MCP server exposing Harrison Rodriguez's portfolio as searchable tools.
+    Indexes only the projects declared below; everything else is excluded
+    by default (deny-by-default scoping).
+
+indexing:
+  # Default: deny. Adding a new project requires a new manifest entry AND
+  # a corresponding SDD change in openspec/changes/.
+  default_policy: deny
+  # Chunker parameters. Smaller chunk_size = better recall; larger = faster.
+  chunk_size: 1500          # characters per chunk
+  chunk_overlap: 200        # character overlap between consecutive chunks
+  # File extensions to include (whitelist on top of the project allow-list).
+  include_extensions:
+    - .py
+    - .ts
+    - .tsx
+    - .js
+    - .jsx
+    - .md
+    - .yaml
+    - .yml
+    - .toml
+    - .json
+  # Path prefixes to skip even within allowed projects.
+  exclude_paths:
+    - node_modules
+    - dist
+    - build
+    - .next
+    - __pycache__
+    - .venv
+    - venv
+    - .git
+    - test-results
+    - playwright-report
+    - data/chunks
+    - data/index.sqlite
+
+# Pre-index secret scan (Layer 2). Runs gitleaks-python on each chunk.
+# high_confidence → block insertion. medium_confidence → flag in audit log.
+preindex_secret_scan:
+  enabled: true
+  tool: gitleaks-python
+  high_confidence_action: block
+  medium_confidence_action: flag
+
+projects:
+  - id: finance-coach-latam
+    path: /home/harri/development/projects/portfolio/finance-coach-latam
+    display_name: "Finance Coach LATAM"
+    description: >
+      Personal finance assistant for LATAM users. Serverless (Lambda + API
+      Gateway + SQS + Neon Postgres + Cognito). Gemini 2.0 Flash + pgvector.
+    include_subdirs:
+      - backend
+      - frontend
+      - infra
+    exclude_subdirs:
+      - node_modules
+      - dist
+      - .aws
+    adr_path: openspec/changes/initial-poc/design.md
+    readme_path: README.md
+
+  - id: landing-page-portfolio
+    path: /home/harri/development/projects/portfolio/landing-page-portfolio
+    display_name: "Landing Page Portfolio"
+    description: >
+      Personal landing page (Astro + TypeScript). Static-first, deployed to
+      Cloudflare Pages.
+    include_subdirs:
+      - src
+      - public
+    exclude_subdirs:
+      - node_modules
+      - dist
+    adr_path: docs/adr
+    readme_path: README.md
