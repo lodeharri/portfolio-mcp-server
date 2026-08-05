@@ -32,7 +32,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from mcp_server.application.ports.manifest import Manifest, Project
 from mcp_server.domain.exceptions import (
@@ -86,12 +86,41 @@ class _RawManifest(BaseModel):
     The :class:`YamlManifestAdapter` flattens this into the application
     layer's :class:`Manifest` shape (``server_name`` at the top level,
     etc.).
+
+    ``projects`` is **required and non-empty**:
+
+    * A missing key breaks the Layer 1 default-deny contract — the
+      preindex pipeline would boot with no declared scope and silently
+      index nothing.
+    * An empty list is equally dangerous — the same fail-closed trigger
+      applies.
+
+    The spec scenario ``Invalid manifest schema is rejected`` in
+    ``openspec/changes/001-bootstrap/specs/security-layers.md`` requires
+    ``ManifestSchemaError`` for both cases.
     """
 
     schema_version: int
     server: _ManifestServer
     indexing: _IndexingConfig
-    projects: list[_RawProject] = Field(default_factory=list)
+    projects: list[_RawProject] = Field(min_length=1)
+
+    @field_validator("projects", mode="before")
+    @classmethod
+    def _reject_unset_projects(cls, value: object) -> object:
+        """Raise :class:`ManifestSchemaError` when ``projects`` is missing.
+
+        Pydantic's ``min_length=1`` only kicks in when the field is
+        present. To catch the *missing* key explicitly we hook
+        ``mode="before"`` and treat ``None`` (the value produced by
+        ``model_validate`` when the key is absent) as a schema error.
+        """
+        if value is None:
+            raise ManifestSchemaError(
+                "manifest is missing required `projects:` key — "
+                "Layer 1 default-deny requires at least one declared project"
+            )
+        return value
 
 
 # ---------------------------------------------------------------------------
