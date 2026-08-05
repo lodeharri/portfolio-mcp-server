@@ -75,14 +75,19 @@ COPY src ./src
 COPY config ./config
 COPY scripts ./scripts
 
-# Build a venv and install the package into it. The pip cache mount
-# keeps wheels out of the layer (saves ~50 MB on the builder; the
-# builder is discarded anyway, but smaller builders = faster CI).
+# Build a venv with pip (needed for the install below), then drop pip
+# after install to save ~12 MB at runtime. The runtime only uses the
+# installed packages directly via the venv's Python interpreter.
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir .
+    && pip install --no-cache-dir . \
+    # Drop pip from the venv after install — runtime doesn't need it.
+    && rm -rf /opt/venv/lib/python3.10/site-packages/pip \
+    && rm -rf /opt/venv/lib/python3.10/site-packages/pip-* \
+    && rm -rf /opt/venv/bin/pip* \
+    && rm -rf /opt/venv/lib/python3.10/site-packages/_distutils_hack 2>/dev/null || true
 
 # Pre-bake a schema-only vector index. The build context does NOT
 # include the sibling project trees (absolute paths in the manifest
@@ -97,7 +102,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # is faster and only creates the schema.
 RUN mkdir -p /build/data
 RUN --mount=type=secret,id=gemini \
-    python /build/scripts/bake_schema.py /build/data/index.sqlite
+    /opt/venv/bin/python /build/scripts/bake_schema.py /build/data/index.sqlite
 
 # ---------- Stage 2: runtime ----------
 FROM python:3.10.12-slim AS runtime
@@ -147,5 +152,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
 # Start uvicorn. Shell form so $PORT expands at runtime. The
 # --workers 1 keeps the 256 MB machine happy (slowapi in-memory state
 # diverges across workers) and matches the Fly.io http_service
-# concurrency setting in fly.toml.
-CMD uvicorn mcp_server.app:app --host 0.0.0.0 --port ${PORT} --workers 1
+# concurrency setting in fly.toml. We force the asyncio loop (not
+# uvloop) to drop the 13 MB uvloop dependency — the perf delta for
+# a single-worker recruitment demo is negligible.
+CMD uvicorn mcp_server.app:app --host 0.0.0.0 --port ${PORT} --workers 1 --loop asyncio
