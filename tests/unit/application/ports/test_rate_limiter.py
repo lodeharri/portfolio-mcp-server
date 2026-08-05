@@ -54,7 +54,6 @@ class TestRateLimiterPortConformance:
         assert isinstance(FakeRateLimiter(), RateLimiterPort)
 
     def test_fake_rate_limiter_returns_limit_string(self) -> None:
-        from mcp_server.application.ports.rate_limiter import RateLimiterPort
 
         class FakeRateLimiter:
             def check(self, client_ip: str) -> bool:

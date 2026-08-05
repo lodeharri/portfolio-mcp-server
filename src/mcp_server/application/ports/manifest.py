@@ -23,9 +23,9 @@ the :class:`Manifest` shape defined here.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
-from typing import Protocol, runtime_checkable
 
 
 class Project(BaseModel):

@@ -27,7 +27,6 @@ from enum import Enum
 
 from pydantic import BaseModel, Field
 
-
 # ---------------------------------------------------------------------------
 # Patterns enum + module-level compiled regexes
 # ---------------------------------------------------------------------------
@@ -200,12 +199,12 @@ class OutputSanitizer:
 
 
 __all__ = [
-    "OutputSanitizer",
     "PATTERN_AWS",
-    "PATTERN_GENERIC",
     "PATTERN_GEMINI",
+    "PATTERN_GENERIC",
     "PATTERN_GITHUB",
     "PATTERN_OPENAI",
+    "OutputSanitizer",
     "RedactionIncident",
     "SanitizedOutput",
     "SecretPattern",

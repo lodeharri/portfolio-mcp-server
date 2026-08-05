@@ -35,7 +35,9 @@ from mcp_server.application.ports.secret_scanner import ScanVerdict
 from mcp_server.domain.exceptions import GitleaksBinaryMissingError
 
 
-def _completed_process(returncode: int, stdout: str = "", stderr: str = "") -> subprocess.CompletedProcess:
+def _completed_process(
+    returncode: int, stdout: str = "", stderr: str = ""
+) -> subprocess.CompletedProcess:
     """Build a fake ``CompletedProcess`` like ``subprocess.run`` would return."""
     return subprocess.CompletedProcess(
         args=["gitleaks", "detect", "--no-git"],
@@ -66,7 +68,9 @@ class TestGitleaksScannerExitCodeMapping:
         scanner = GitleaksScanner()
         with (
             patch("shutil.which", return_value="/usr/local/bin/gitleaks"),
-            patch("subprocess.run", return_value=_completed_process(1, stdout='{"findings": [...]}')),
+            patch(
+                "subprocess.run", return_value=_completed_process(1, stdout='{"findings": [...]}')
+            ),
         ):
             verdict = scanner.scan("AKIA1234567890ABCDEF", source=str(tmp_path / "x.py"))
         assert verdict == ScanVerdict.BLOCKED
@@ -135,7 +139,11 @@ class TestGitleaksScannerSubprocessSafety:
         ):
             scanner.scan(malicious, source=str(tmp_path / "x.py"))
         # The content MUST NOT appear as a substring of the argv list.
-        argv = mock_run.call_args.args[0] if mock_run.call_args.args else mock_run.call_args.kwargs.get("args", [])
+        argv = (
+            mock_run.call_args.args[0]
+            if mock_run.call_args.args
+            else mock_run.call_args.kwargs.get("args", [])
+        )
         joined = " ".join(str(a) for a in argv)
         assert "rm -rf" not in joined
         assert malicious not in joined

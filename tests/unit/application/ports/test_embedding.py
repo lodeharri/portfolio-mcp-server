@@ -30,12 +30,11 @@ class TestEmbeddingPortProtocol:
         assert EmbeddingPort is not None
 
     def test_embedding_port_is_a_protocol(self) -> None:
-        from mcp_server.application.ports.embedding import EmbeddingPort
-
         # All Protocol classes are also typing.Protocol instances. This
         # guards against accidentally exporting a regular class or a
         # typing.TypeVar / Generic instead of a Protocol.
-        import typing
+
+        from mcp_server.application.ports.embedding import EmbeddingPort
 
         assert isinstance(EmbeddingPort, type) or hasattr(EmbeddingPort, "_is_protocol")
 
@@ -67,7 +66,6 @@ class TestEmbeddingPortConformance:
         assert isinstance(fake, EmbeddingPort)
 
     def test_fake_embedding_returns_correct_length(self) -> None:
-        from mcp_server.application.ports.embedding import EmbeddingPort
 
         class FakeEmbedding:
             def embed(self, texts: list[str]) -> list[list[float]]:

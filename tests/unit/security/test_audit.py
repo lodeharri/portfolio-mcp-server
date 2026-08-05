@@ -158,9 +158,7 @@ class TestAuditLoggerSanitizesSourceField:
     token) is preserved so the audit log stays useful for forensics.
     """
 
-    def test_source_with_aws_key_is_redacted(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_source_with_aws_key_is_redacted(self, capsys: pytest.CaptureFixture[str]) -> None:
         from mcp_server.security.audit import AuditLogger
 
         audit = AuditLogger()
@@ -180,9 +178,7 @@ class TestAuditLoggerSanitizesSourceField:
         )
         assert "[REDACTED]" in record["source"]
 
-    def test_source_with_github_token_is_redacted(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_source_with_github_token_is_redacted(self, capsys: pytest.CaptureFixture[str]) -> None:
         from mcp_server.security.audit import AuditLogger
 
         audit = AuditLogger()
@@ -193,9 +189,7 @@ class TestAuditLoggerSanitizesSourceField:
         out, _ = capsys.readouterr()
         record = _read_json_lines(out)[0]
 
-        assert github_token not in json.dumps(record), (
-            "audit JSON leaked the GitHub token"
-        )
+        assert github_token not in json.dumps(record), "audit JSON leaked the GitHub token"
         assert "[REDACTED]" in record["source"]
 
 

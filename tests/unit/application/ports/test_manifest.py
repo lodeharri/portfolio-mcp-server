@@ -51,7 +51,7 @@ class TestManifestModels:
             projects=[
                 Project(
                     id="finance-coach-latam",
-                    path=Path("/tmp/finance"),
+                    path=Path("/tmp/finance"),  # noqa: S108
                     display_name="Finance",
                     description="test",
                     include_subdirs=["backend"],
@@ -63,7 +63,7 @@ class TestManifestModels:
         restored = Manifest(**dumped)
         assert restored.server_name == "portfolio-mcp-server"
         assert restored.projects[0].id == "finance-coach-latam"
-        assert restored.projects[0].path == Path("/tmp/finance")
+        assert restored.projects[0].path == Path("/tmp/finance")  # noqa: S108
 
 
 class TestManifestPortProtocol:
@@ -91,12 +91,13 @@ class TestManifestPortConformance:
     """A class with the right methods satisfies ``ManifestPort``."""
 
     def test_fake_manifest_satisfies_protocol(self) -> None:
+        from pathlib import Path
+
         from mcp_server.application.ports.manifest import (
             Manifest,
             ManifestPort,
             Project,
         )
-        from pathlib import Path
 
         class FakeManifest:
             """In-memory fake satisfying ManifestPort."""
@@ -113,7 +114,7 @@ class TestManifestPortConformance:
                     projects=[
                         Project(
                             id="p",
-                            path=Path("/tmp/p"),
+                            path=Path("/tmp/p"),  # noqa: S108
                             display_name="P",
                             description="",
                             include_subdirs=["src"],
@@ -131,8 +132,9 @@ class TestManifestPortConformance:
         assert isinstance(FakeManifest(), ManifestPort)
 
     def test_fake_manifest_is_path_indexed_behavior(self) -> None:
-        from mcp_server.application.ports.manifest import Manifest, Project
         from pathlib import Path
+
+        from mcp_server.application.ports.manifest import Manifest
 
         class FakeManifest:
             def __init__(self) -> None:

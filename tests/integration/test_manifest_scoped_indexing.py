@@ -41,9 +41,7 @@ class TestManifestScopedIndexingIntegration:
         adapter.load()
         return adapter
 
-    def test_real_manifest_has_two_projects(
-        self, manifest_adapter: YamlManifestAdapter
-    ) -> None:
+    def test_real_manifest_has_two_projects(self, manifest_adapter: YamlManifestAdapter) -> None:
         manifest = manifest_adapter.load()
         # The shipped manifest declares finance-coach-latam + landing-page-portfolio.
         ids = {p.id for p in manifest.projects}
@@ -59,9 +57,7 @@ class TestManifestScopedIndexingIntegration:
         assert ".md" in manifest.include_extensions
         assert ".ts" in manifest.include_extensions
 
-    def test_declared_project_path_is_indexed(
-        self, manifest_adapter: YamlManifestAdapter
-    ) -> None:
+    def test_declared_project_path_is_indexed(self, manifest_adapter: YamlManifestAdapter) -> None:
         manifest = manifest_adapter.load()
         first_project = manifest.projects[0]
         # A file under the first project's include_subdirs MUST be indexed.
@@ -70,16 +66,12 @@ class TestManifestScopedIndexingIntegration:
             target = first_project.path / first_subdir / "module.py"
             assert manifest_adapter.is_path_indexed(target) is True
 
-    def test_unrelated_path_is_not_indexed(
-        self, manifest_adapter: YamlManifestAdapter
-    ) -> None:
+    def test_unrelated_path_is_not_indexed(self, manifest_adapter: YamlManifestAdapter) -> None:
         # A path clearly outside any declared project is denied.
-        unrelated = Path("/tmp/some-other-project/src/main.py")
+        unrelated = Path("/tmp/some-other-project/src/main.py")  # noqa: S108
         assert manifest_adapter.is_path_indexed(unrelated) is False
 
-    def test_path_traversal_is_not_indexed(
-        self, manifest_adapter: YamlManifestAdapter
-    ) -> None:
+    def test_path_traversal_is_not_indexed(self, manifest_adapter: YamlManifestAdapter) -> None:
         manifest = manifest_adapter.load()
         first_project = manifest.projects[0]
         # `../etc/passwd` resolves outside the project root → denied.
@@ -94,9 +86,7 @@ class TestManifestScopedIndexingIntegration:
             )
             assert manifest_adapter.is_path_indexed(traversal) is False
 
-    def test_excluded_subdir_is_not_indexed(
-        self, manifest_adapter: YamlManifestAdapter
-    ) -> None:
+    def test_excluded_subdir_is_not_indexed(self, manifest_adapter: YamlManifestAdapter) -> None:
         manifest = manifest_adapter.load()
         for project in manifest.projects:
             if not project.exclude_subdirs:

@@ -34,13 +34,12 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, Field
 
-from mcp_server.application.ports.manifest import Manifest, ManifestPort, Project
+from mcp_server.application.ports.manifest import Manifest, Project
 from mcp_server.domain.exceptions import (
     ManifestNotFoundError,
     ManifestPermissionError,
     ManifestSchemaError,
 )
-
 
 # ---------------------------------------------------------------------------
 # Internal Pydantic model — mirrors the on-disk YAML schema
@@ -132,23 +131,17 @@ class YamlManifestAdapter:
         try:
             raw_text = self._path.read_text()
         except PermissionError as exc:
-            raise ManifestPermissionError(
-                f"manifest is unreadable: {self._path}"
-            ) from exc
+            raise ManifestPermissionError(f"manifest is unreadable: {self._path}") from exc
 
         try:
             raw_dict = yaml.safe_load(raw_text)
         except yaml.YAMLError as exc:
-            raise ManifestSchemaError(
-                f"manifest YAML is malformed: {exc}"
-            ) from exc
+            raise ManifestSchemaError(f"manifest YAML is malformed: {exc}") from exc
 
         try:
             raw = _RawManifest.model_validate(raw_dict)
         except Exception as exc:
-            raise ManifestSchemaError(
-                f"manifest does not match schema: {exc}"
-            ) from exc
+            raise ManifestSchemaError(f"manifest does not match schema: {exc}") from exc
 
         self._manifest = Manifest(
             server_name=raw.server.name,

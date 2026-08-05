@@ -16,8 +16,6 @@ single-process uvicorn deployment (``--workers 1`` per ADR-001).
 
 from __future__ import annotations
 
-import pytest
-
 
 class TestSlowapiRateLimiterCheck:
     """``check(client_ip)`` returns ``True`` for under-limit, ``False`` otherwise."""

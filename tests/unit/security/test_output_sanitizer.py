@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Regex table — each entry is (pattern_name, sample_input, expected_redacted)
 # ---------------------------------------------------------------------------
@@ -76,7 +75,8 @@ class TestOutputSanitizerRegexPatterns:
         sanitizer = OutputSanitizer()
         result = sanitizer.sanitize(sample_input, source="test-source")
         assert expected_redacted in result.redacted_text, (
-            f"pattern {pattern_name} should redact {sample_input!r} but got {result.redacted_text!r}"
+            f"pattern {pattern_name} should redact {sample_input!r} "
+            f"but got {result.redacted_text!r}"
         )
 
     @pytest.mark.parametrize(("pattern_name", "sample_input", "expected_redacted"), REDACTION_CASES)
@@ -133,11 +133,7 @@ class TestOutputSanitizerMultipleMatches:
         from mcp_server.security.output_sanitizer import OutputSanitizer
 
         sanitizer = OutputSanitizer()
-        text = (
-            "AWS=AKIAIOSFODNN7EXAMPLE "
-            "GH=ghp_" + "a" * 36 + " "
-            "OpenAI=sk-" + "b" * 48
-        )
+        text = "AWS=AKIAIOSFODNN7EXAMPLE GH=ghp_" + "a" * 36 + " OpenAI=sk-" + "b" * 48
         result = sanitizer.sanitize(text, source="test-source")
         assert result.redacted_text.count("[REDACTED]") == 3
         assert len(result.incidents) == 3
@@ -193,8 +189,7 @@ class TestOutputSanitizerThreadSafety:
 
         # At least one module-level compiled pattern.
         assert any(
-            attr_name.startswith("PATTERN_") or attr_name.startswith("_")
-            for attr_name in dir(mod)
+            attr_name.startswith("PATTERN_") or attr_name.startswith("_") for attr_name in dir(mod)
         ), "module should expose pre-compiled pattern constants"
 
     def test_multiple_instances_share_state(self) -> None:

@@ -40,7 +40,7 @@ class VectorStorePort(Protocol):
         """
         ...
 
-    def upsert(self, chunks: "list[CodeChunk]") -> None:
+    def upsert(self, chunks: list[CodeChunk]) -> None:
         """Persist a batch of chunks.
 
         Implementations MUST be idempotent on ``chunk_hash`` (re-inserting
@@ -50,7 +50,7 @@ class VectorStorePort(Protocol):
         """
         ...
 
-    def search(self, query_vector: list[float], limit: int = 10) -> "list[CodeChunk]":
+    def search(self, query_vector: list[float], limit: int = 10) -> list[CodeChunk]:
         """Top-k vector similarity search.
 
         Returns up to ``limit`` chunks ordered by ascending distance to

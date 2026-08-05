@@ -94,8 +94,10 @@ class TestCompositionIsFrozen:
     """The composition root is frozen (no mid-request mutation)."""
 
     def test_frozen_assignment_raises(self) -> None:
+        import dataclasses
+
         comp = create_composition(AppConfig())
-        with pytest.raises(Exception):  # FrozenInstanceError or AttributeError
+        with pytest.raises(dataclasses.FrozenInstanceError):
             comp.manifest = None  # type: ignore[misc]
 
 
@@ -108,12 +110,12 @@ class TestCompositionAuditSharedAcrossAdapters:
         comp = create_composition(AppConfig())
         # The scanner was constructed with the same audit instance.
         assert isinstance(comp.secret_scanner, GitleaksScanner)
-        assert comp.secret_scanner._audit is comp.audit  # noqa: SLF001
+        assert comp.secret_scanner._audit is comp.audit
 
     def test_rate_limiter_receives_audit(self) -> None:
         comp = create_composition(AppConfig())
         assert isinstance(comp.rate_limiter, SlowapiRateLimiter)
-        assert comp.rate_limiter._audit is comp.audit  # noqa: SLF001
+        assert comp.rate_limiter._audit is comp.audit
 
 
 class TestCompositionManifestLoadedEndToEnd:
@@ -132,5 +134,5 @@ class TestCompositionManifestLoadedEndToEnd:
         # Force the manifest to load (lazy).
         comp.manifest.load()
         # A path clearly outside any declared project returns False.
-        unrelated = Path("/tmp/this-path-does-not-exist-anywhere.py")
+        unrelated = Path("/tmp/this-path-does-not-exist-anywhere.py")  # noqa: S108
         assert comp.manifest.is_path_indexed(unrelated) is False

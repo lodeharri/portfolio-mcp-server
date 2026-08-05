@@ -35,9 +35,7 @@ class LLMPort(Protocol):
         """
         ...
 
-    def chat(
-        self, messages: list[dict], tools: list[dict] | None = None
-    ) -> str:
+    def chat(self, messages: list[dict], tools: list[dict] | None = None) -> str:
         """Multi-turn chat completion with optional tool definitions.
 
         Args:

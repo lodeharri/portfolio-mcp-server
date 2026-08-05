@@ -72,10 +72,9 @@ class TestVectorStorePortConformance:
         assert isinstance(fake, VectorStorePort)
 
     def test_fake_vector_store_has_hash_behavior(self) -> None:
-        from mcp_server.application.ports.vector_store import VectorStorePort
 
         class FakeVectorStore:
-            _store: dict[str, list[float]] = {}
+            _store: dict[str, list[float]] = {}  # noqa: RUF012 — shared mutable on class for the test fixture
 
             def has_hash(self, chunk_hash: str) -> bool:
                 return chunk_hash in self._store

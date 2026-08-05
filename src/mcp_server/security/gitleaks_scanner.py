@@ -34,9 +34,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from mcp_server.application.ports.secret_scanner import ScanVerdict, SecretScannerPort
+from mcp_server.application.ports.secret_scanner import ScanVerdict
 from mcp_server.domain.exceptions import GitleaksBinaryMissingError
-
 
 # ---------------------------------------------------------------------------
 # Binary discovery
@@ -120,7 +119,7 @@ class GitleaksScanner:
             chunk_path.write_text(content, encoding="utf-8")
 
             try:
-                result = subprocess.run(
+                result = subprocess.run(  # noqa: S603 — gitleaks binary is fixed, content via tmpdir file
                     [str(binary), "detect", "--no-git", "--source", tmpdir],
                     capture_output=True,
                     text=True,

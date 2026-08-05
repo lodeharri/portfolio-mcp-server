@@ -30,9 +30,9 @@ def load_config() -> AppConfig: ...
 
 # src/mcp_server/build_info.py — version metadata returned by /healthz
 class BuildInfo(BaseModel):
-    version: str       # from pyproject.toml
-    commit_sha: str    # from $COMMIT_SHA or "unknown"
-    built_at: str      # ISO-8601 from $BUILT_AT or "unknown"
+    version: str       # from $VERSION env var, default "0.1.0"
+    commit_sha: str    # from $COMMIT_SHA env var, default "dev"
+    built_at: str      # ISO-8601 from $BUILT_AT env var, default = current time at config load
 ```
 
 ## Requirements
@@ -72,7 +72,8 @@ The system MUST serve `GET /healthz` returning HTTP 200 with JSON body `{status,
 - GIVEN `COMMIT_SHA` and `BUILT_AT` env vars are unset
 - WHEN a client sends `GET /healthz`
 - THEN the response MUST still be 200
-- AND `commit_sha` and `built_at` MUST both be the string `"unknown"`.
+- AND `commit_sha` MUST be the string `"dev"`
+- AND `built_at` MUST be a valid ISO-8601 timestamp (current time at config load).
 
 #### Scenario: Healthz output passes sanitization
 

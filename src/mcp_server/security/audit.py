@@ -40,15 +40,12 @@ import structlog
 
 from mcp_server.security.output_sanitizer import OutputSanitizer
 
-
 # ---------------------------------------------------------------------------
 # Module-level structlog configuration
 # ---------------------------------------------------------------------------
 
 
-def _add_iso_timestamp(
-    _logger: Any, _method_name: str, event_dict: dict
-) -> dict:
+def _add_iso_timestamp(_logger: Any, _method_name: str, event_dict: dict) -> dict:
     """Inject an ISO-8601 UTC timestamp into the event dict."""
     event_dict.setdefault("timestamp", datetime.now(timezone.utc).isoformat())
     return event_dict

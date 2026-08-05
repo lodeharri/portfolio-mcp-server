@@ -20,9 +20,6 @@ from limits import parse as parse_rate_limit
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from mcp_server.application.ports.rate_limiter import RateLimiterPort
-
-
 _DEFAULT_LIMIT = "30/minute"
 
 

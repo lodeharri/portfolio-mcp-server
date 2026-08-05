@@ -48,9 +48,7 @@ class TestLLMPortConformance:
             def summarize(self, text: str, max_tokens: int = 500) -> str:
                 return f"summary({len(text)})"
 
-            def chat(
-                self, messages: list[dict], tools: list[dict] | None = None
-            ) -> str:
+            def chat(self, messages: list[dict], tools: list[dict] | None = None) -> str:
                 return "fake-reply"
 
         fake = FakeLLM()
@@ -58,15 +56,12 @@ class TestLLMPortConformance:
 
     def test_fake_llm_summarize_signature(self) -> None:
         """``summarize`` accepts ``max_tokens`` as a keyword argument."""
-        from mcp_server.application.ports.llm import LLMPort
 
         class FakeLLM:
             def summarize(self, text: str, max_tokens: int = 500) -> str:
                 return f"{text[:max_tokens]}"
 
-            def chat(
-                self, messages: list[dict], tools: list[dict] | None = None
-            ) -> str:
+            def chat(self, messages: list[dict], tools: list[dict] | None = None) -> str:
                 return ""
 
         fake = FakeLLM()

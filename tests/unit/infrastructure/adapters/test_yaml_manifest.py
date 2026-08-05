@@ -24,7 +24,6 @@ from pathlib import Path
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Fixture builder
 # ---------------------------------------------------------------------------
@@ -141,9 +140,7 @@ class TestYamlManifestAdapterLoad:
 class TestYamlManifestAdapterIsPathIndexed:
     """``is_path_indexed`` is default-deny (Layer 1 manifest scoping)."""
 
-    def test_path_under_declared_project_include_subdirs_returns_true(
-        self, tmp_path: Path
-    ) -> None:
+    def test_path_under_declared_project_include_subdirs_returns_true(self, tmp_path: Path) -> None:
         from mcp_server.infrastructure.adapters.yaml_manifest import (
             YamlManifestAdapter,
         )
@@ -258,10 +255,10 @@ class TestYamlManifestAdapterErrors:
     """Adapter raises domain errors on bad input."""
 
     def test_missing_file_raises_manifest_not_found(self, tmp_path: Path) -> None:
+        from mcp_server.domain.exceptions import ManifestNotFoundError
         from mcp_server.infrastructure.adapters.yaml_manifest import (
             YamlManifestAdapter,
         )
-        from mcp_server.domain.exceptions import ManifestNotFoundError
 
         missing = tmp_path / "does-not-exist.yaml"
         adapter = YamlManifestAdapter(missing)
@@ -269,10 +266,10 @@ class TestYamlManifestAdapterErrors:
             adapter.load()
 
     def test_invalid_schema_raises_manifest_schema_error(self, tmp_path: Path) -> None:
+        from mcp_server.domain.exceptions import ManifestSchemaError
         from mcp_server.infrastructure.adapters.yaml_manifest import (
             YamlManifestAdapter,
         )
-        from mcp_server.domain.exceptions import ManifestSchemaError
 
         # Missing required fields (no server.name, no projects).
         bad = tmp_path / "bad.yaml"

@@ -19,6 +19,7 @@ in the FastAPI app.
 from __future__ import annotations
 
 from enum import Enum
+from typing import Protocol, runtime_checkable
 
 
 class ScanVerdict(Enum):
@@ -31,9 +32,6 @@ class ScanVerdict(Enum):
     CLEAN = "clean"
     FLAGGED = "flagged"
     BLOCKED = "blocked"
-
-
-from typing import Protocol, runtime_checkable
 
 
 @runtime_checkable
