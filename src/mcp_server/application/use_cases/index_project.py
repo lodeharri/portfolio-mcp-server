@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
+from mcp_server.application.ports.chunking import ChunkingPort
 from mcp_server.application.ports.embedding import EmbeddingPort
 from mcp_server.application.ports.secret_scanner import ScanVerdict, SecretScannerPort
 from mcp_server.application.ports.vector_store import VectorStorePort
@@ -121,18 +122,16 @@ class IndexProjectUseCase:
         embedding: EmbeddingPort,
         vector_store: VectorStorePort,
         scanner: SecretScannerPort,
+        chunking: ChunkingPort,
         audit: object,
-        chunk_size: int = DEFAULT_CHUNK_SIZE,
-        chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
         inter_call_sleep_seconds: float = DEFAULT_INTER_CALL_SLEEP_SECONDS,
     ) -> None:
         self.manifest = manifest
         self.embedding = embedding
         self.vector_store = vector_store
         self.scanner = scanner
+        self.chunking = chunking
         self.audit = audit
-        self.chunk_size = chunk_size
-        self.chunk_overlap = chunk_overlap
         self.inter_call_sleep_seconds = inter_call_sleep_seconds
         # Counter used to pace the 0.1 s sleep between *every* embed
         # call (across batches). Reset on each ``execute()`` invocation
@@ -174,7 +173,10 @@ class IndexProjectUseCase:
             if not content.strip():
                 continue
 
-            for chunk_text, start_char, end_char in self._chunk_content(content):
+            for chunk in self.chunking.chunk(content, file_path):
+                chunk_text = chunk.text
+                start_char = chunk.start_char
+                end_char = chunk.end_char
                 code_chunk = self._build_chunk(
                     project_id=project_id,
                     file_path=file_path,
@@ -289,27 +291,6 @@ class IndexProjectUseCase:
                 if not self.manifest.is_path_indexed(file_path):
                     continue
                 yield file_path
-
-    def _chunk_content(
-        self,
-        content: str,
-    ) -> Iterable[tuple[str, int, int]]:
-        """Yield ``(text, start_char, end_char)`` tuples.
-
-        Splits ``content`` into ``chunk_size`` character windows with
-        ``chunk_overlap`` character overlap on each consecutive pair.
-        Empty content yields nothing.
-        """
-        if not content:
-            return
-        step = max(1, self.chunk_size - self.chunk_overlap)
-        i = 0
-        while i < len(content):
-            end = min(i + self.chunk_size, len(content))
-            yield content[i:end], i, end
-            if end >= len(content):
-                return
-            i += step
 
     def _embed_with_pacing(
         self,

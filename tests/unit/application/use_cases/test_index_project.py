@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
+from mcp_server.application.ports.chunking import Chunk
 from mcp_server.application.ports.secret_scanner import ScanVerdict
 
 
@@ -104,6 +105,22 @@ class _FakeEmbeddingPort:
         return [_fake_embed(t, self.dim) for t in texts]
 
 
+class _FakeChunkingPort:
+    def __init__(self, chunk_size: int = 1500, chunk_overlap: int = 200) -> None:
+        self.chunk_size = chunk_size
+        self.chunk_overlap = chunk_overlap
+
+    def chunk(self, content: str, file_path: Path) -> list[Chunk]:
+        chunks: list[Chunk] = []
+        step = max(1, self.chunk_size - self.chunk_overlap)
+        for start in range(0, len(content), step):
+            end = min(start + self.chunk_size, len(content))
+            chunks.append(Chunk(text=content[start:end], start_char=start, end_char=end))
+            if end == len(content):
+                break
+        return chunks
+
+
 class _FakeScanner:
     def __init__(self, verdict: ScanVerdict = ScanVerdict.CLEAN) -> None:
         self._verdict = verdict
@@ -167,9 +184,8 @@ def _build_use_case(
         embedding=embedding,
         vector_store=vector_store,
         scanner=scanner,
+        chunking=_FakeChunkingPort(chunk_size, chunk_overlap),
         audit=audit,
-        chunk_size=chunk_size,
-        chunk_overlap=chunk_overlap,
         inter_call_sleep_seconds=inter_call_sleep_seconds,
     )
     return uc, manifest, embedding, vector_store, scanner, audit, root
@@ -403,6 +419,7 @@ class TestManifestManifestDefaults:
             embedding=MagicMock(),
             vector_store=MagicMock(),
             scanner=MagicMock(),
+            chunking=MagicMock(),
             audit=MagicMock(),
         )
         assert uc.inter_call_sleep_seconds == 0.1
