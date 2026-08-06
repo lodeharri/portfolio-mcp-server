@@ -2,7 +2,14 @@
 
 ## Purpose
 
-The multi-stage Dockerfile that produces a deployable image for Fly.io, Hugging Face Spaces, or Render from the same source. It bakes the vector index at build time (so the runtime has zero cold-start work), runs as a non-root user, exposes a `/healthz` healthcheck, and stays under 150 MB. The `$GEMINI_API_KEY` MUST be passed via BuildKit `--secret` so it never lands in the image layers.
+The multi-stage Dockerfile that produces a deployable image for Fly.io, Hugging Face Spaces, or Render from the same source. It bakes the vector index at build time (so the runtime has zero cold-start work), runs as a non-root user, exposes a `/healthz` healthcheck, and stays under 500 MB. The `$GEMINI_API_KEY` MUST be passed via BuildKit `--secret` so it never lands in the image layers.
+
+> **Note on size budget (change 003-playground-ui)**: The original target was
+> < 150 MB. The realistic budget for this Python+AI stack on
+> `python:3.10.12-slim` (with LangGraph, sqlite-vec, FastMCP, etc.) is
+> ~500 MB. The invariant was relaxed in `openspec/config.yaml` for this
+> reason; an Alpine migration (deferred) drives the budget back toward
+> 150 MB.
 
 ## Schema / Interface
 
@@ -101,15 +108,18 @@ The runtime image MUST `EXPOSE $PORT` and MUST `CMD ["uvicorn", "mcp_server.app:
 - WHEN `docker inspect mcp-server:test --format '{{json .Config.ExposedPorts}}'` is invoked
 - THEN `10000/tcp` MUST appear in the exposed ports list.
 
-### Requirement: Final Image Size < 150 MB
+### Requirement: Final Image Size < 500 MB
 
-The runtime image MUST have a compressed size under 150 MB.
+The runtime image MUST have a compressed size under 500 MB.
+
+> Original target was < 150 MB; relaxed per change 003-playground-ui
+> because the realistic budget for the Python+AI stack is ~500 MB.
 
 #### Scenario: Image size is below the budget
 
 - GIVEN the image is built
 - WHEN `docker image ls mcp-server:test --format '{{.Size}}'` is invoked
-- THEN the reported size MUST be < 150 MB (≈ 157,286,400 bytes).
+- THEN the reported size MUST be < 500 MB (≈ 524,288,000 bytes).
 
 #### Scenario: No build-essentials in runtime
 
@@ -132,5 +142,5 @@ The runtime image MUST have a compressed size under 150 MB.
 | Built image runs as UID 10001 | Non-root security |
 | `GEMINI_API_KEY` does not appear in `docker history` or `env` | Secret hygiene |
 | `gitleaks detect --redact` against the built image finds no secrets | CI gate |
-| Final image size < 150 MB | Cost discipline |
+| Final image size < 500 MB | Cost discipline (relaxed from < 150 MB per 003-playground-ui) |
 | `--mock-gemini` build produces a working image with an empty index | Testability / CI |
