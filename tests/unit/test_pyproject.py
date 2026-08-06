@@ -40,9 +40,7 @@ def test_langgraph_pin_matches_spec() -> None:
     )
     # Pull the operator strings. Order matters — must appear in order.
     # Spec: ``langgraph>=0.2,<2.0`` — two specifier parts separated by a comma.
-    assert ",<2.0" in pin, (
-        f"langgraph pin must include an upper bound '<2.0', got: {pin!r}"
-    )
+    assert ",<2.0" in pin, f"langgraph pin must include an upper bound '<2.0', got: {pin!r}"
     assert re.search(r">=0\.2(\.0)?", pin), (
         f"langgraph pin must include '>=0.2' lower bound, got: {pin!r}"
     )
@@ -77,6 +75,5 @@ def test_langgraph_pin_specifier_accepts_versions(
     spec_set = SpecifierSet(pin.removeprefix("langgraph"))
     ok = Version(installed_version) in spec_set
     assert ok is expected_ok, (
-        f"version {installed_version} should {'pass' if expected_ok else 'fail'} "
-        f"the pin {pin!r}"
+        f"version {installed_version} should {'pass' if expected_ok else 'fail'} the pin {pin!r}"
     )

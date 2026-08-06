@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import AsyncIterator
-from typing import Any, Protocol, get_args, get_origin, runtime_checkable
+from typing import Any, Protocol, get_args, get_origin
 
 import pytest
 from pydantic import BaseModel, ValidationError
@@ -24,7 +24,6 @@ from mcp_server.application.ports.agent import (
     AgentRequest,
     AgentResponse,
 )
-
 
 # ---------------------------------------------------------------------------
 # AgentChunk — Pydantic model contract
@@ -79,9 +78,11 @@ class TestAgentPortProtocol:
         # The decorator is what makes ``isinstance(...)`` work; this
         # is the property ``composition.py`` and the SSE adapter rely
         # on when they look up ``app.state.composition.agent``.
-        assert getattr(AgentPort, "_is_runtime_protocol", False) or hasattr(
-            AgentPort, "__call__"
-        ) or isinstance(AgentPort, type)
+        assert (
+            getattr(AgentPort, "_is_runtime_protocol", False)
+            or callable(AgentPort)
+            or isinstance(AgentPort, type)
+        )
 
     def test_stream_is_a_coroutine_function(self) -> None:
         """``stream`` is declared as ``async def`` — async iterator factory.
@@ -94,8 +95,7 @@ class TestAgentPortProtocol:
         )
         # ``inspect.iscoroutinefunction`` returns True for ``async def`` methods.
         assert inspect.iscoroutinefunction(AgentPort.stream), (
-            "AgentPort.stream must be declared with ``async def`` "
-            "(PR2a agent-streaming spec)"
+            "AgentPort.stream must be declared with ``async def`` (PR2a agent-streaming spec)"
         )
 
     def test_stream_return_annotation_is_async_iterator_of_agent_chunk(self) -> None:
@@ -106,17 +106,14 @@ class TestAgentPortProtocol:
         access time, so a missing/wrong annotation breaks the SSE flow.
         """
         hints = AgentPort.stream.__annotations__
-        assert "return" in hints, (
-            "AgentPort.stream must declare an explicit return annotation"
-        )
+        assert "return" in hints, "AgentPort.stream must declare an explicit return annotation"
         return_annotation = hints["return"]
         origin = get_origin(return_annotation)
         # AsyncIterator[X] is typing.AsyncIterator[X] — its origin is
         # ``collections.abc.AsyncIterator``. ``collections.abc.AsyncIterator``
         # directly used also passes.
         assert origin is AsyncIterator or return_annotation is AsyncIterator, (
-            f"AgentPort.stream return annotation must be AsyncIterator, "
-            f"got: {return_annotation!r}"
+            f"AgentPort.stream return annotation must be AsyncIterator, got: {return_annotation!r}"
         )
         args = get_args(return_annotation)
         assert args, (
@@ -124,8 +121,7 @@ class TestAgentPortProtocol:
             f"got: {return_annotation!r}"
         )
         assert args[0] is AgentChunk, (
-            f"AgentPort.stream must yield AgentChunk instances, "
-            f"got parameterization: {args[0]!r}"
+            f"AgentPort.stream must yield AgentChunk instances, got parameterization: {args[0]!r}"
         )
 
     def test_stream_argument_signature(self) -> None:
@@ -175,9 +171,7 @@ class _FakeSatisfyingAdapter:
     async def run(self, request: AgentRequest, tools: list[Any]) -> AgentResponse:
         return AgentResponse(answer="ok")
 
-    async def stream(
-        self, request: AgentRequest, tools: list[Any]
-    ) -> AsyncIterator[AgentChunk]:
+    async def stream(self, request: AgentRequest, tools: list[Any]) -> AsyncIterator[AgentChunk]:
         yield AgentChunk(kind="done", data="")
 
 
