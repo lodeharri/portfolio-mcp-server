@@ -71,5 +71,24 @@ class VectorStorePort(Protocol):
         """
         ...
 
+    def distinct_file_paths(self, project_id: str) -> set[str]:
+        """Return the set of distinct ``file_path`` values for ``project_id``.
+
+        Used by the preindex CLI's ``--purge-orphans`` flag to detect
+        files in the DB that no longer exist on disk. Implementations
+        MUST return an empty set when no chunks exist for the project.
+        """
+        ...
+
+    def delete_by_file_path(self, project_id: str, file_path: str) -> int:
+        """Delete all chunks for ``(project_id, file_path)``.
+
+        Returns the number of rows deleted (across both the text and
+        vector tables). Used by the preindex CLI's ``--purge-orphans``
+        flag to remove stale chunks after a file is deleted from the
+        project tree.
+        """
+        ...
+
 
 __all__ = ["VectorStorePort"]

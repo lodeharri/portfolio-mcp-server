@@ -13,6 +13,7 @@ Per ADR-002 the argparse surface is:
 * ``--no-mock-gemini-auto`` — disable the auto-fallback (require a key).
 * ``--quiet`` — suppress per-file progress output.
 * ``--limit-files N`` — cap files per project (dev convenience).
+* ``--purge-orphans`` — delete chunks whose source files no longer exist.
 
 Auto-``--mock-gemini``: when ``GEMINI_API_KEY`` is unset AND
 ``--mock-gemini`` was not explicitly passed (and ``--no-mock-gemini-auto``
@@ -123,6 +124,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Cap the number of files per project (dev convenience).",
     )
+    parser.add_argument(
+        "--purge-orphans",
+        action="store_true",
+        default=False,
+        help=(
+            "Before indexing, delete chunks whose source files no longer exist "
+            "on disk. Useful after deleting files from a project — prevents "
+            "stale chunks from being returned by search_code."
+        ),
+    )
     return parser
 
 
@@ -204,6 +215,39 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("ERROR: manifest declared no projects", file=sys.stderr)
         return PreindexExitCode.MANIFEST_ERROR.value
 
+    # Optional: purge orphan chunks before indexing. Detects files that
+    # exist in the DB but not on disk and deletes them.
+    purge_total = 0
+    if args.purge_orphans:
+        for project in projects:
+            try:
+                purged, orphans_count = _purge_orphans_for_project(comp, project)
+            except Exception as exc:
+                # Purge is informational; don't fail the whole run.
+                print(
+                    f"WARN: purge failed for {project.id!r}: {exc}",
+                    file=sys.stderr,
+                )
+                # Emit a zero-count audit event so downstream consumers see
+                # the attempt didn't error out catastrophically.
+                print(json.dumps({
+                    "event": "orphans.purged",
+                    "project_id": project.id,
+                    "file_count": 0,
+                    "chunk_count": 0,
+                }))
+                continue
+            # Emit a structured audit event for every project (even with
+            # zero orphans) so downstream consumers can rely on the event
+            # being present whenever --purge-orphans is requested.
+            print(json.dumps({
+                "event": "orphans.purged",
+                "project_id": project.id,
+                "file_count": orphans_count,
+                "chunk_count": purged,
+            }))
+            purge_total += purged
+
     overall = {
         "projects": 0,
         "files": 0,
@@ -212,6 +256,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "blocked": 0,
         "flagged": 0,
         "errors": 0,
+        "purged_orphans": purge_total,
     }
     for project in projects:
         if not args.quiet:
@@ -247,6 +292,42 @@ def main(argv: Sequence[str] | None = None) -> int:
 # ---------------------------------------------------------------------------
 # cli — thin wrapper for the console_script
 # ---------------------------------------------------------------------------
+
+
+def _purge_orphans_for_project(comp, project) -> tuple[int, int]:
+    """Delete chunks whose source file no longer exists on disk.
+
+    Returns ``(chunks_deleted, files_orphaned)``. The walk mirrors the
+    manifest scope: only files that ``is_path_indexed`` would consider
+    are surveyed. Anything in the DB but not visited by the manifest
+    walker is treated as an orphan.
+    """
+    # Get all distinct file_paths for this project from the DB.
+    db_files = comp.vector_store.distinct_file_paths(project.id)
+
+    # Walk the project's filesystem via the manifest adapter.
+    fs_files: set[str] = set()
+    for path in project.path.rglob("*"):
+        if not path.is_file():
+            continue
+        # Resolve and compare against the manifest's path index.
+        try:
+            resolved = str(path.resolve())
+        except OSError:
+            continue
+        if comp.manifest.is_path_indexed(Path(resolved)):
+            fs_files.add(resolved)
+
+    # Files in DB but not in FS = orphans.
+    orphans = db_files - fs_files
+    if not orphans:
+        return 0, 0
+
+    # Delete each orphan chunk from the DB.
+    deleted = 0
+    for orphan_path in orphans:
+        deleted += comp.vector_store.delete_by_file_path(project.id, orphan_path)
+    return deleted, len(orphans)
 
 
 def cli(argv: Sequence[str] | None = None) -> int:

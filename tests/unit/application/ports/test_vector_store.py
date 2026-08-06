@@ -56,6 +56,7 @@ class TestVectorStorePortConformance:
 
             def __init__(self) -> None:
                 self._chunks: dict[str, list[float]] = {}
+                self._paths_by_project: dict[str, set[str]] = {}
 
             def has_hash(self, chunk_hash: str) -> bool:
                 return chunk_hash in self._chunks
@@ -64,12 +65,29 @@ class TestVectorStorePortConformance:
                 for chunk in chunks:
                     # chunk_hash is duck-typed — accept any object with the attr.
                     self._chunks[chunk.chunk_hash] = chunk.embedding
+                    self._paths_by_project.setdefault(chunk.project_id, set()).add(
+                        chunk.file_path
+                    )
 
             def search(self, query_vector: list[float], limit: int = 10) -> list:
                 return []
 
             def count_by_project(self, project_id: str) -> int:
                 return 0
+
+            def distinct_file_paths(self, project_id: str) -> set[str]:
+                return set(self._paths_by_project.get(project_id, set()))
+
+            def delete_by_file_path(self, project_id: str, file_path: str) -> int:
+                paths = self._paths_by_project.get(project_id, set())
+                if file_path not in paths:
+                    return 0
+                paths.discard(file_path)
+                return sum(
+                    1
+                    for chunk_hash, chunk in self._chunks.items()
+                    if chunk
+                )
 
         fake = FakeVectorStore()
         assert isinstance(fake, VectorStorePort)

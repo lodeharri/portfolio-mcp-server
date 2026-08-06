@@ -227,6 +227,83 @@ class SqliteVecStore:
             return 0
         return int(row[0])
 
+    def distinct_file_paths(self, project_id: str) -> set[str]:
+        """Return the set of distinct ``file_path`` values for ``project_id``.
+
+        Used by the preindex CLI's ``--purge-orphans`` flag to detect
+        files in the DB that no longer exist on disk. Returns an empty
+        set when no chunks exist for the project.
+        """
+        cur = self._conn.execute(
+            "SELECT DISTINCT file_path FROM code_chunks WHERE project_id = ?",
+            (project_id,),
+        )
+        return {row[0] for row in cur.fetchall()}
+
+    def delete_by_file_path(self, project_id: str, file_path: str) -> int:
+        """Delete all chunks for ``(project_id, file_path)``.
+
+        Returns the number of rows deleted across both the text
+        (``code_chunks``) and vector (``vec_chunks_<dim>``) tables. Used
+        by the preindex CLI's ``--purge-orphans`` flag to remove stale
+        chunks after a file is deleted from the project tree.
+        """
+        # Count rows we'll delete so we can return the total.
+        cur = self._conn.execute(
+            "SELECT COUNT(*) FROM code_chunks WHERE project_id = ? AND file_path = ?",
+            (project_id, file_path),
+        )
+        row = cur.fetchone()
+        count = int(row[0]) if row else 0
+
+        # Delete the text chunks first.
+        self._conn.execute(
+            "DELETE FROM code_chunks WHERE project_id = ? AND file_path = ?",
+            (project_id, file_path),
+        )
+
+        # Delete the corresponding vector rows. We need to know which
+        # dim tables to wipe from. The chunk_hash is the foreign key.
+        for dim in self._known_dims():
+            try:
+                self._conn.execute(
+                    f"DELETE FROM {self._table_name(dim)} WHERE chunk_hash IN ("
+                    "  SELECT chunk_hash FROM code_chunks "
+                    "  WHERE project_id = ? AND file_path = ?"
+                    ")",
+                    (project_id, file_path),
+                )
+            except sqlite3.OperationalError:
+                # Table doesn't exist yet (no chunks at this dim).
+                pass
+
+        # Commit so subsequent connections (e.g. tests reading via a
+        # fresh sqlite3.connect()) see the deletions.
+        self._conn.commit()
+
+        return count
+
+    def _known_dims(self) -> list[int]:
+        """Return all dims that have a ``vec_chunks_<dim>`` table.
+
+        Queries ``sqlite_master`` for tables matching the pattern.
+        Returns ``[768]`` on a fresh DB (per the bootstrapped schema).
+        """
+        cur = self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'vec_chunks_%'"
+        )
+        rows = cur.fetchall()
+        dims: list[int] = []
+        for (name,) in rows:
+            # name looks like "vec_chunks_768"
+            try:
+                dim = int(name.rsplit("_", 1)[-1])
+            except (ValueError, IndexError):
+                continue
+            if name == self._table_name(dim):
+                dims.append(dim)
+        return dims
+
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
