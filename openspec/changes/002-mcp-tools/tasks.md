@@ -21,13 +21,13 @@ Chain strategy: stacked-to-main
 
 ## Phase 2 — PR2: File Readers + LLM (`explain_architecture`, `summarize_readme`, `get_architecture_diagram`)
 
-- [ ] 2.1 Extend `domain/entities.py::Project` + `infrastructure/adapters/yaml_manifest.py::_RawProject` + adapter `load()` — preserve `adr_path`, `readme_path`, `diagram_path` (Pydantic `extra='ignore'` drops them); `tests/unit/infrastructure/adapters/test_yaml_manifest.py` RED→GREEN.
-- [ ] 2.2 RED→GREEN `application/use_cases/explain_architecture.py::ExplainArchitectureUseCase` + tests — ADR via `adr_path`, `LLMPort.summarize` once, sanitize `summary`, `sources` verbatim, missing ADR → `FileNotFoundError`, truncate to 64 KB.
-- [ ] 2.3 RED→GREEN `application/use_cases/summarize_readme.py::SummarizeReadmeUseCase` + tests — README via `readme_path`, default `max_tokens=300`, `api_key=` redaction, `display_name` fallback to `id`, truncate to 32 KB.
-- [ ] 2.4 RED→GREEN `application/use_cases/get_architecture_diagram.py::GetArchitectureDiagramUseCase` + tests — SVG base64, decode→sanitize→re-encode, >10MB `ValueError`, non-SVG prefix reject, `<script>`/`<text>`/`<!-- -->` redaction.
-- [ ] 2.5 GREEN extend `interfaces/mcp/tools.py` — append `explain_architecture_tool`, `summarize_readme_tool`, `get_architecture_diagram_tool` wrappers.
-- [ ] 2.6 GREEN `composition.py` — wire 3 use cases; add fields (real types, no `object | None`).
-- [ ] 2.7 GREEN `tests/integration/test_mcp_tools_readers.py` — FastMCP client smoke under `--mock-gemini` for the 3 tools.
+- [x] 2.1 Extend `domain/entities.py::Project` + `infrastructure/adapters/yaml_manifest.py::_RawProject` + adapter `load()` — preserve `adr_path`, `readme_path`, `diagram_path` (Pydantic `extra='ignore'` drops them); `tests/unit/infrastructure/adapters/test_yaml_manifest.py` RED→GREEN.
+- [x] 2.2 RED→GREEN `application/use_cases/explain_architecture.py::ExplainArchitectureUseCase` + tests — ADR via `adr_path`, `LLMPort.summarize` once, sanitize `summary`, `sources` verbatim, missing ADR → `FileNotFoundError`, truncate to 64 KB.
+- [x] 2.3 RED→GREEN `application/use_cases/summarize_readme.py::SummarizeReadmeUseCase` + tests — README via `readme_path`, default `max_tokens=300`, `api_key=` redaction, `display_name` fallback to `id`, truncate to 32 KB.
+- [x] 2.4 RED→GREEN `application/use_cases/get_architecture_diagram.py::GetArchitectureDiagramUseCase` + tests — SVG base64, decode→sanitize→re-encode, >10MB `ValueError`, non-SVG prefix reject, `<script>`/`<text>`/`<!-- -->` redaction.
+- [x] 2.5 GREEN extend `interfaces/mcp/tools.py` — append `explain_architecture_tool`, `summarize_readme_tool`, `get_architecture_diagram_tool` wrappers.
+- [x] 2.6 GREEN `composition.py` — wire 3 use cases; add fields (real types, no `object | None`).
+- [x] 2.7 GREEN `tests/integration/test_mcp_tools_readers.py` — FastMCP client smoke under `--mock-gemini` for the 3 tools.
 
 ## Phase 3 — PR3: Pydantic AI Agent (`ask_portfolio`)
 
