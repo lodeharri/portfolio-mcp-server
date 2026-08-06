@@ -26,6 +26,9 @@ indexing:
   chunk_size: 1500          # characters per chunk
   chunk_overlap: 200        # character overlap between consecutive chunks
   # File extensions to include (whitelist on top of the project allow-list).
+  # Strictly necessary: source code + documentation. Config files
+  # (.yaml/.yml/.toml/.json) are EXCLUDED — they don't demonstrate skills
+  # and bloat the index with non-semantic content.
   include_extensions:
     - .py
     - .ts
@@ -33,24 +36,46 @@ indexing:
     - .js
     - .jsx
     - .md
-    - .yaml
-    - .yml
-    - .toml
-    - .json
-  # Path prefixes to skip even within allowed projects.
+  # Path prefixes to skip even within allowed projects. Conservative by
+  # design — recruiter demo only cares about hand-written code, not
+  # generated artifacts. ~70% volume reduction vs. unfiltered.
   exclude_paths:
-    - node_modules
-    - dist
-    - build
-    - .next
-    - __pycache__
-    - .venv
-    - venv
-    - .git
-    - test-results
-    - playwright-report
-    - data/chunks
-    - data/index.sqlite
+    # Tests
+    - "**/test/**"
+    - "**/tests/**"
+    - "**/__tests__/**"
+    - "**/*.test.*"
+    - "**/*.spec.*"
+    - "**/__snapshots__/**"
+    - "**/fixtures/**"
+    - "**/test-results/**"
+    - "**/coverage/**"
+    - "**/playwright-report/**"
+    # Build artifacts
+    - "**/node_modules/**"
+    - "**/dist/**"
+    - "**/build/**"
+    - "**/.next/**"
+    - "**/.astro/**"
+    - "**/__pycache__/**"
+    - "**/.venv/**"
+    - "**/venv/**"
+    # Cloud / deploy
+    - "**/.aws/**"
+    - "**/.terraform/**"
+    # Generated files
+    - "**/*.min.js"
+    - "**/*.bundle.js"
+    - "**/*.pyc"
+    - "**/*.pyo"
+    # Database migrations (no semantic value, mostly DDL)
+    - "**/migrations/**"
+    # VCS / project metadata
+    - "**/.git/**"
+    # Pre-index data (avoid recursion)
+    - "**/data/chunks/**"
+    - "**/data/index.sqlite"
+    - "**/data/index.sqlite-*"
 
 # Pre-index secret scan (Layer 2). Runs gitleaks-python on each chunk.
 # high_confidence → block insertion. medium_confidence → flag in audit log.
@@ -92,6 +117,7 @@ projects:
     exclude_subdirs:
       - node_modules
       - dist
+      - .astro
     adr_path: docs/adr
     readme_path: README.md
     diagram_path: docs/architecture.svg
