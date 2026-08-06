@@ -12,7 +12,7 @@ that contract — not on real LLM output.
 Two layers of coverage:
 
 1. **Tool list** — the FastMCP server's tool list now contains all 6
-   tools (PR1 × 2 + PR2 × 3 + PR3 × 1). This is the cross-phase gate
+   tools (PR1 x 2 + PR2 x 3 + PR3 x 1). This is the cross-phase gate
    G4 from ``tasks.md``.
 2. **Tool call** — ``ask_portfolio`` returns a dict with ``answer``,
    ``tools_called``, and ``conversation_id`` keys (the response shape

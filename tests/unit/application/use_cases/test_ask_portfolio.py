@@ -55,10 +55,10 @@ from pydantic_ai.messages import (
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from mcp_server.application.use_cases.ask_portfolio import (
+    DEFAULT_MAX_TOOL_CALLS,
     AskPortfolioRequest,
     AskPortfolioResult,
     AskPortfolioUseCase,
-    DEFAULT_MAX_TOOL_CALLS,
 )
 from mcp_server.domain.exceptions import RateLimitExceeded
 from mcp_server.security.output_sanitizer import OutputSanitizer
@@ -172,7 +172,10 @@ class TestAskPortfolioHappyPath:
         """A clean answer passes through the sanitizer with no redacted text."""
         use_case, audit, rate_limiter, _ = _make_use_case()
 
-        result = use_case.execute(AskPortfolioRequest(question="Which project is closest to production?"))
+        request = AskPortfolioRequest(
+            question="Which project is closest to production?"
+        )
+        result = use_case.execute(request)
 
         assert isinstance(result, AskPortfolioResult)
         assert result.answer == "clean answer"
@@ -258,10 +261,11 @@ class TestAskPortfolioSanitization:
 
     def test_github_pat_in_answer_is_redacted(self) -> None:
         """A GitHub PAT in the agent's answer is redacted."""
+        pat = "ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789ab"
         agent, _ = _build_agent_with_script(
-            [ModelResponse(parts=[TextPart("the token ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789ab is bad")])]
+            [ModelResponse(parts=[TextPart(f"the token {pat} is bad")])]
         )
-        use_case, audit, _, _ = _make_use_case(agent=agent)
+        use_case, _, _, _ = _make_use_case(agent=agent)
 
         result = use_case.execute(AskPortfolioRequest(question="any"))
 

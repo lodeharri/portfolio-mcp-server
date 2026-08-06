@@ -74,11 +74,11 @@ DEFAULT_MAX_TOOL_CALLS: int = 5
 DEFAULT_CLIENT_IP: str = "127.0.0.1"
 
 __all__ = [
+    "DEFAULT_CLIENT_IP",
+    "DEFAULT_MAX_TOOL_CALLS",
     "AskPortfolioRequest",
     "AskPortfolioResult",
     "AskPortfolioUseCase",
-    "DEFAULT_MAX_TOOL_CALLS",
-    "DEFAULT_CLIENT_IP",
 ]
 
 

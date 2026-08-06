@@ -106,7 +106,7 @@ class Composition:
     explain_architecture_use_case: ExplainArchitectureUseCase
     summarize_readme_use_case: SummarizeReadmeUseCase
     get_architecture_diagram_use_case: GetArchitectureDiagramUseCase
-    ask_portfolio_use_case: "AskPortfolioUseCase | None" = None
+    ask_portfolio_use_case: AskPortfolioUseCase | None = None
 
 
 def create_composition(
@@ -346,8 +346,8 @@ def _build_pydantic_agent(
     # Lazy import — keeps pydantic_ai out of the module-load graph
     # for the rest of the composition root.
     from pydantic_ai import Agent
-    from pydantic_ai.models.function import AgentInfo, FunctionModel
     from pydantic_ai.messages import ModelResponse, TextPart
+    from pydantic_ai.models.function import AgentInfo, FunctionModel
 
     if use_mock_gemini:
         # Deterministic mock — the spec mandates the literal format
