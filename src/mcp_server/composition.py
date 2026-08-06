@@ -181,7 +181,7 @@ def create_composition(
     if use_mock_gemini:
         llm: LLMPort | None = MockLlmAdapter()
     else:
-        llm = GeminiLlmAdapter(api_key=api_key)
+        llm = GeminiLlmAdapter(api_key=api_key, model=config.gemini_model)
 
     # PR3: preindex use case.
     chunking = create_langchain_adapter()
@@ -243,7 +243,7 @@ def create_composition(
 
     agent = create_langchain_agent(
         api_key=config.gemini_api_key or "",
-        model=AGENT_MODEL_NAME,
+        model=config.gemini_model,
     )
     agent_tools = [
         _tools.list_projects_tool,
@@ -295,10 +295,12 @@ def _db_path_override(config: AppConfig) -> Path | None:
 
 
 #: Default Gemini chat model for the ask_portfolio LangChain agent.
-#: Matches ``gemini_llm.DEFAULT_MODEL``. Kept here so the composition
-#: root remains the only place where the model string is named
-#: (ADR-001: no scattered configuration).
-AGENT_MODEL_NAME: str = "gemini-2.0-flash"
+#: Matches ``gemini_llm.DEFAULT_MODEL``. The composition root reads
+#: the model from ``config.gemini_model`` (overridable via the
+#: ``GEMINI_MODEL`` env var) — this constant stays as the canonical
+#: default declared in :class:`AppConfig`. (ADR-001: no scattered
+#: configuration.)
+AGENT_MODEL_NAME: str = "gemini-flash-latest"
 
 
 # Alias matching design.md and tasks.md. ``compose`` reads more naturally

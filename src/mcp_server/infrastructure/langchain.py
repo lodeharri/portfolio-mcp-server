@@ -96,7 +96,7 @@ class LangChainAgentAdapter:
     def __init__(
         self,
         api_key: str,
-        model: str = "gemini-2.0-flash",
+        model: str = "gemini-flash-latest",
         *,
         llm: Any | None = None,
         max_output_tokens: int = 600,
@@ -179,7 +179,7 @@ def create_langchain_adapter(
 
 def create_langchain_agent(
     api_key: str,
-    model: str = "gemini-2.0-flash",
+    model: str = "gemini-flash-latest",
 ) -> LangChainAgentAdapter | _MockLangChainAgentAdapter:
     if not api_key.strip():
         return _MockLangChainAgentAdapter()
