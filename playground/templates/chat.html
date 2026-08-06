@@ -1,0 +1,441 @@
+{% extends "base.html" %}
+
+{% block title %}Chat — MCP Playground{% endblock %}
+
+{% block content %}
+<section class="playground-chat" aria-labelledby="chat-heading">
+    <h1 id="chat-heading">Chat with the agent</h1>
+    <p class="chat-summary">
+        Each browser keeps its own conversation in <code>localStorage</code>;
+        the server never sees a session id and sets no cookies.
+    </p>
+
+    <div
+        id="chat-status"
+        class="chat-status chat-status--ready"
+        data-state="ready"
+        role="status"
+        aria-live="polite"
+    >Ready</div>
+
+    <ol
+        id="chat-transcript"
+        class="chat-transcript"
+        aria-label="Conversation transcript"
+    ></ol>
+
+    <form
+        id="chat-form"
+        class="chat-form"
+        autocomplete="off"
+        aria-label="Send a message to the agent"
+    >
+        <label for="chat-input" class="visually-hidden">Your message</label>
+        <input
+            id="chat-input"
+            name="message"
+            class="chat-input"
+            placeholder="Ask about a project, an architectural decision, or the codebase…"
+            autocomplete="off"
+            maxlength="4000"
+            required
+            aria-label="Your message"
+        >
+        <button
+            id="chat-submit"
+            type="submit"
+            class="chat-submit"
+        >Send</button>
+    </form>
+
+    <p
+        id="chat-persistence-notice"
+        class="chat-persistence-notice"
+        hidden
+    >
+        Conversations in this browser are not saved between reloads.
+    </p>
+
+    <noscript>
+        <p class="chat-noscript">
+            JavaScript is required for streaming chat. The other five
+            tools are still available at
+            <a href="/playground"><code>/playground</code></a>.
+        </p>
+    </noscript>
+</section>
+{% endblock %}
+
+{% block scripts %}
+{#-
+    Inline chat client (stateful browser + stateless server per ADR-004).
+    Uses fetch + ReadableStream because the native EventSource API only
+    supports GET — POSTing the conversation history requires fetch.
+-#}
+<script>
+(function () {
+    "use strict";
+
+    const NS = "mcp-playground-chat";
+    const SID_KEY = NS + ":sid";
+    const BROADCAST_CHANNEL = "mcp-playground-chat";
+    const STREAM_URL = "/chat/stream";
+    const DONE = "[DONE]";
+    const ERROR = "[ERROR]";
+
+    var transcript = document.getElementById("chat-transcript");
+    var form = document.getElementById("chat-form");
+    var input = document.getElementById("chat-input");
+    var submitButton = document.getElementById("chat-submit");
+    var status = document.getElementById("chat-status");
+    var persistenceNotice = document.getElementById("chat-persistence-notice");
+
+    // REL-4 graceful degradation: when the browser can't do fetch or
+    // ReadableStream, the form is non-functional but the rest of the
+    // playground still works. Surface a clear inline notice.
+    var jsAvailable = (
+        typeof window.fetch === "function" &&
+        typeof window.ReadableStream === "function"
+    );
+
+    // Channel for cross-tab coordination of history writes — tabs
+    // coordinate via a tiny lock flag so concurrent saves don't clobber
+    // each other (REL-7 fix from PR1 review).
+    var channel = null;
+    var lockHeld = false;
+    var pendingUnlockedHandlers = [];
+    try {
+        if (typeof BroadcastChannel === "function") {
+            channel = new BroadcastChannel(BROADCAST_CHANNEL);
+            channel.addEventListener("message", function (ev) {
+                if (ev.data === "lock") {
+                    lockHeld = true;
+                } else if (ev.data === "unlock") {
+                    lockHeld = false;
+                    var handlers = pendingUnlockedHandlers.splice(0);
+                    for (var i = 0; i < handlers.length; i++) handlers[i]();
+                }
+            });
+        }
+    } catch (_e) { /* BroadcastChannel may be unavailable */ }
+
+    // Graceful localStorage wrapper: catches SecurityError (private
+    // mode) and QuotaExceededError. Returns null on read failure,
+    // returns true/false on write success/failure.
+    var persistenceDisabled = false;
+    function safeGet(key) {
+        try {
+            var value = window.localStorage.getItem(key);
+            return value;
+        } catch (_e) {
+            persistenceDisabled = true;
+            return null;
+        }
+    }
+    function safeSet(key, value) {
+        try {
+            window.localStorage.setItem(key, value);
+            return true;
+        } catch (_e) {
+            persistenceDisabled = true;
+            return null;
+        }
+    }
+
+    // 1. Session UUID — generated via crypto.randomUUID() on first
+    // visit per chat-persistence spec; never derived from IP, cookie,
+    // or any server-side state.
+    var sessionId = safeGet(SID_KEY);
+    if (!sessionId) {
+        try {
+            sessionId = (window.crypto && window.crypto.randomUUID)
+                ? window.crypto.randomUUID()
+                : null;
+        } catch (_e) { sessionId = null; }
+        if (!sessionId) {
+            // RFC4122-shaped fallback (no network dependency).
+            sessionId = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(
+                /[xy]/g, function (ch) {
+                    var r = (Math.random() * 16) | 0;
+                    return (ch === "x" ? r : (r & 0x3) | 0x8).toString(16);
+                }
+            );
+        }
+        safeSet(SID_KEY, sessionId);
+    }
+
+    var historyKey = NS + ":" + sessionId + ":history";
+
+    function loadHistory() {
+        if (persistenceDisabled) return [];
+        var raw = safeGet(historyKey);
+        if (!raw) return [];
+        try {
+            var parsed = JSON.parse(raw);
+            return Array.isArray(parsed) ? parsed : [];
+        } catch (_e) {
+            // Corrupted entry: keep the bad payload in storage for
+            // inspection rather than silently wiping recruiter data.
+            return [];
+        }
+    }
+
+    function renderMessage(role, content, isPartial) {
+        var li = document.createElement("li");
+        li.className = "chat-message chat-message--" + role;
+        li.dataset.role = role;
+        if (isPartial) li.dataset.partial = "true";
+        var label = document.createElement("span");
+        label.className = "chat-message__role";
+        label.textContent = role === "user" ? "You" : "Agent";
+        var body = document.createElement("p");
+        body.className = "chat-message__content";
+        body.textContent = content;
+        li.appendChild(label);
+        li.appendChild(body);
+        transcript.appendChild(li);
+        transcript.scrollTop = transcript.scrollHeight;
+        return li;
+    }
+
+    function renderHistory() {
+        transcript.textContent = "";
+        var messages = loadHistory();
+        for (var i = 0; i < messages.length; i++) {
+            var msg = messages[i];
+            if (msg && (msg.role === "user" || msg.role === "assistant") &&
+                typeof msg.content === "string") {
+                renderMessage(msg.role, msg.content, false);
+            }
+        }
+    }
+
+    function setStatus(state, label) {
+        if (!status) return;
+        status.dataset.state = state;
+        status.textContent = label;
+        status.className = "chat-status chat-status--" + state;
+    }
+
+    function showPersistenceNotice() {
+        if (persistenceNotice) persistenceNotice.hidden = false;
+    }
+
+    function showInlineRetry(message, onRetry) {
+        var li = document.createElement("li");
+        li.className = "chat-message chat-message--error";
+        li.dataset.role = "error";
+        var body = document.createElement("p");
+        body.className = "chat-message__content";
+        body.textContent = message + " ";
+        var button = document.createElement("button");
+        button.type = "button";
+        button.className = "chat-retry";
+        button.textContent = "Retry?";
+        button.addEventListener("click", function () {
+            li.remove();
+            if (typeof onRetry === "function") onRetry();
+        });
+        body.appendChild(button);
+        li.appendChild(body);
+        transcript.appendChild(li);
+        transcript.scrollTop = transcript.scrollHeight;
+    }
+
+    // Two-tab lock — Serialize writes so the last tab's save isn't
+    // clobbered by a concurrent save from a sibling tab. New writes
+    // wait for the unlock signal before persisting.
+    function withLock(fn) {
+        if (!channel || lockHeld) {
+            if (lockHeld) {
+                pendingUnlockedHandlers.push(fn);
+                channel.postMessage("wait");
+                return;
+            }
+        }
+        try { channel && channel.postMessage("lock"); } catch (_e) {}
+        lockHeld = true;
+        try {
+            fn();
+        } finally {
+            lockHeld = false;
+            try { channel && channel.postMessage("unlock"); } catch (_e) {}
+        }
+    }
+
+    function saveHistory(messages) {
+        if (persistenceDisabled) {
+            showPersistenceNotice();
+            return;
+        }
+        // Re-read the live storage under the lock so concurrent tabs
+        // see the freshest version rather than the stale snapshot we
+        // loaded earlier.
+        function doSave() {
+            var payload = JSON.stringify(messages);
+            if (safeSet(historyKey, payload) === null) {
+                showPersistenceNotice();
+            }
+        }
+        withLock(doSave);
+    }
+
+    function appendToHistory(role, content) {
+        var messages = loadHistory();
+        messages.push({ role: role, content: content });
+        saveHistory(messages);
+    }
+
+    async function sendMessage(text) {
+        if (!jsAvailable) {
+            showInlineRetry("JavaScript is required for streaming chat.");
+            return;
+        }
+        var historySnapshot = loadHistory();
+        var messages = historySnapshot.concat([
+            { role: "user", content: text },
+        ]);
+
+        // Render the user message immediately so the recruiter sees it.
+        renderMessage("user", text, false);
+
+        var assistantAcc = "";
+        var assistantNode = renderMessage("assistant", "", true);
+        var assistantContent = assistantNode.querySelector(".chat-message__content");
+
+        setStatus("streaming", "Streaming…");
+        submitButton.disabled = true;
+
+        var controller = new AbortController();
+        var res;
+        try {
+            res = await fetch(STREAM_URL, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Accept": "text/event-stream",
+                },
+                body: JSON.stringify({
+                    messages: messages,
+                    conversation_id: sessionId,
+                }),
+                signal: controller.signal,
+            });
+        } catch (networkErr) {
+            assistantNode.remove();
+            setStatus("ready", "Ready");
+            submitButton.disabled = false;
+            showInlineRetry("Connection lost. Retry?", function () {
+                sendMessage(text);
+            });
+            return;
+        }
+
+        if (!res.ok || !res.body) {
+            assistantNode.remove();
+            setStatus("ready", "Ready");
+            submitButton.disabled = false;
+            showInlineRetry("Connection lost. Retry?", function () {
+                sendMessage(text);
+            });
+            return;
+        }
+
+        var reader = res.body.getReader();
+        var decoder = new TextDecoder();
+        var buffer = "";
+        var sawDone = false;
+        var sawError = false;
+
+        try {
+            while (true) {
+                var r = await reader.read();
+                if (r.done) break;
+                buffer += decoder.decode(r.value, { stream: true });
+                var idx;
+                while ((idx = buffer.indexOf("\n\n")) !== -1) {
+                    var block = buffer.slice(0, idx);
+                    buffer = buffer.slice(idx + 2);
+                    var dataLine = null;
+                    var eventName = null;
+                    var lines = block.split("\n");
+                    for (var i2 = 0; i2 < lines.length; i2++) {
+                        var line = lines[i2];
+                        if (line.indexOf("data:") === 0) {
+                            dataLine = line.slice(5).replace(/^ /, "");
+                        } else if (line.indexOf("event:") === 0) {
+                            eventName = line.slice(6).trim();
+                        }
+                    }
+                    if (dataLine == null) continue;
+                    if (dataLine === DONE) {
+                        sawDone = true;
+                        break;
+                    }
+                    if (dataLine === ERROR) {
+                        sawError = true;
+                        break;
+                    }
+                    if (eventName === "tool_call") {
+                        // Tool-call audit — surfaced inline as muted text.
+                        var li = document.createElement("li");
+                        li.className = "chat-message chat-message--tool";
+                        li.textContent = "tool: " + dataLine;
+                        transcript.insertBefore(li, assistantNode);
+                        continue;
+                    }
+                    assistantAcc += dataLine;
+                    if (assistantContent) assistantContent.textContent = assistantAcc;
+                    transcript.scrollTop = transcript.scrollHeight;
+                }
+                if (sawDone || sawError) break;
+            }
+        } catch (_streamErr) {
+            sawError = true;
+        }
+
+        if (sawDone) {
+            assistantContent.textContent = assistantAcc;
+            assistantNode.dataset.partial = "false";
+            appendToHistory("assistant", assistantAcc);
+            setStatus("ready", "Ready");
+            submitButton.disabled = false;
+            input.value = "";
+            input.focus();
+        } else {
+            // Connection dropped before [DONE] — discard the partial
+            // assistant message (do NOT persist); render retry affordance.
+            assistantNode.remove();
+            setStatus("ready", "Ready");
+            submitButton.disabled = false;
+            showInlineRetry("Connection lost. Retry?", function () {
+                sendMessage(text);
+            });
+        }
+    }
+
+    // Bootstrap
+    if (!jsAvailable) {
+        setStatus("unsupported", "JavaScript required");
+        showInlineRetry(
+            "JavaScript is required for streaming chat. Try /playground for the other tools."
+        );
+        if (submitButton) submitButton.disabled = true;
+    } else {
+        renderHistory();
+        setStatus("ready", "Ready");
+    }
+
+    if (persistenceDisabled) {
+        showPersistenceNotice();
+    }
+
+    form.addEventListener("submit", function (event) {
+        event.preventDefault();
+        var text = input.value.trim();
+        if (!text) return;
+        sendMessage(text);
+    });
+})();
+</script>
+{% endblock %}

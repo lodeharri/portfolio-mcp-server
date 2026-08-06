@@ -25,6 +25,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from mcp_server.interfaces.http.web.chat import build_chat_router
 from mcp_server.interfaces.http.web.playground import register_playground_routes
 from mcp_server.interfaces.http.web.templates import templates
 
@@ -142,6 +143,13 @@ def build_web_router() -> APIRouter:
     # live in the playground module — register them against this
     # router so the prefix sits at the same place.
     register_playground_routes(router)
+
+    # PR2b — streaming chat surface (stateful browser, stateless
+    # server). ``build_chat_router`` returns its own APIRouter so the
+    # chat surface is self-contained; mounting it here makes
+    # ``GET /chat`` and ``POST /chat/stream`` part of the same web
+    # surface as the playground forms.
+    router.include_router(build_chat_router())
 
     # Mount ``/static/`` last so all routes above resolve first.
     router.mount("/static", _static_files(), name="static")
