@@ -59,9 +59,7 @@ class TestOutputSanitizerMiddlewareContract:
 
         app = create_app(AppConfig())
         # FastAPI stores middleware classes on ``app.user_middleware``.
-        middleware_classes = [
-            m.cls.__name__ for m in app.user_middleware if hasattr(m, "cls")
-        ]
+        middleware_classes = [m.cls.__name__ for m in app.user_middleware if hasattr(m, "cls")]
         assert "OutputSanitizerMiddleware" in middleware_classes
 
 
@@ -105,9 +103,7 @@ def app_with_secret_route():
 
 
 class TestRedactionOnJsonResponse:
-    def test_github_pat_is_redacted_in_json_response(
-        self, app_with_secret_route, capsys
-    ) -> None:
+    def test_github_pat_is_redacted_in_json_response(self, app_with_secret_route, capsys) -> None:
         from fastapi.testclient import TestClient
 
         client = TestClient(app_with_secret_route)
@@ -120,19 +116,13 @@ class TestRedactionOnJsonResponse:
         assert "[REDACTED]" in body
         assert parsed["note"] == "this is the response body"
 
-    def test_audit_event_emitted_on_redaction(
-        self, app_with_secret_route, capsys
-    ) -> None:
+    def test_audit_event_emitted_on_redaction(self, app_with_secret_route, capsys) -> None:
         from fastapi.testclient import TestClient
 
         client = TestClient(app_with_secret_route)
         client.get("/echo")
         out, _ = capsys.readouterr()
-        records = [
-            json.loads(line)
-            for line in out.splitlines()
-            if line.strip()
-        ]
+        records = [json.loads(line) for line in out.splitlines() if line.strip()]
         redacted = [r for r in records if r.get("event") == "output.redacted"]
         assert len(redacted) == 1
         assert "github" in redacted[0]["patterns"]
@@ -144,9 +134,7 @@ class TestRedactionOnJsonResponse:
 
 
 class TestRouteSkipping:
-    def test_healthz_route_is_not_sanitized(
-        self, app_with_secret_route, monkeypatch
-    ) -> None:
+    def test_healthz_route_is_not_sanitized(self, app_with_secret_route, monkeypatch) -> None:
         """Sanitizer MUST NOT touch /healthz (it's a known safe status route).
 
         The sanitization contract is per-route: routes like /healthz
@@ -159,10 +147,103 @@ class TestRouteSkipping:
 
         # The middleware exposes ``SKIP_PATH_PREFIXES`` as a public
         # tuple — assert /healthz is in there.
-        skip_paths = getattr(
-            OutputSanitizerMiddleware, "SKIP_PATH_PREFIXES", ()
-        )
+        skip_paths = getattr(OutputSanitizerMiddleware, "SKIP_PATH_PREFIXES", ())
         assert "/healthz" in skip_paths, (
             "/healthz must be in the middleware skip list to avoid "
             "sanitization cost on every health probe"
         )
+
+    def test_skip_list_is_seven_prefix_tuple(self) -> None:
+        """The closed-world skip set MUST equal the 7-tuple:
+        ``/healthz``, ``/mcp``, ``/chat``, ``/chat/stream``,
+        ``/playground``, ``/playground/api``, ``/static``.
+
+        Per change 003-playground-ui (sanitizer-skip-list spec), adding
+        any new prefix requires a spec change; this is the regression
+        guard.
+        """
+        from mcp_server.interfaces.http.middleware.sanitizer import (
+            OutputSanitizerMiddleware,
+        )
+
+        expected = (
+            "/healthz",
+            "/mcp",
+            "/chat",
+            "/chat/stream",
+            "/playground",
+            "/playground/api",
+            "/static",
+        )
+        assert tuple(OutputSanitizerMiddleware.SKIP_PATH_PREFIXES) == expected
+
+    def test_skip_list_module_constant_matches_class(self) -> None:
+        """The module-level ``SKIP_PATH_PREFIXES`` tuple MUST equal the
+        class attribute so the closed-world contract is consistent
+        across all import paths.
+        """
+        from mcp_server.interfaces.http.middleware.sanitizer import (
+            SKIP_PATH_PREFIXES,
+            OutputSanitizerMiddleware,
+        )
+
+        assert tuple(SKIP_PATH_PREFIXES) == tuple(OutputSanitizerMiddleware.SKIP_PATH_PREFIXES)
+
+    def test_should_skip_true_for_each_prefix(self) -> None:
+        """The ``_should_skip`` predicate MUST return True for each of
+        the 7 closed-world prefixes, including the two ``/chat`` and two
+        ``/playground`` route families.
+        """
+        from mcp_server.interfaces.http.middleware.sanitizer import (
+            _should_skip,
+        )
+
+        for prefix in (
+            "/healthz",
+            "/mcp",
+            "/chat",
+            "/chat/stream",
+            "/playground",
+            "/playground/api",
+            "/static",
+        ):
+            assert _should_skip(prefix, [prefix]), (
+                f"_should_skip must accept the closed-world prefix {prefix!r}"
+            )
+
+    def test_should_skip_true_for_subpaths_of_each_prefix(self) -> None:
+        """Subpaths of every skip prefix MUST also be skipped — the
+        middleware matches by ``startswith``, so ``/playground/api/x``
+        counts as skipped under ``/playground/api``.
+        """
+        from mcp_server.interfaces.http.middleware.sanitizer import (
+            SKIP_PATH_PREFIXES,
+            _should_skip,
+        )
+
+        for path in (
+            "/chat/anything",
+            "/chat/stream/anything",
+            "/playground/anything",
+            "/playground/api/list_projects",
+            "/static/htmx.min.js",
+            "/static/style.css",
+        ):
+            assert _should_skip(path, SKIP_PATH_PREFIXES), (
+                f"_should_skip must accept the subpath {path!r}"
+            )
+
+    def test_healthcheck_path_is_not_skipped(self) -> None:
+        """The closed-world skip set MUST NOT match ``/healthcheck``
+        (no false positives — the prefix is ``/healthz``, not
+        ``/healthcheck``).
+        """
+        from mcp_server.interfaces.http.middleware.sanitizer import (
+            SKIP_PATH_PREFIXES,
+            _should_skip,
+        )
+
+        assert not _should_skip("/healthcheck", SKIP_PATH_PREFIXES)
+        # Defense-in-depth: also test admin paths that should NOT be skipped.
+        assert not _should_skip("/admin/debug", SKIP_PATH_PREFIXES)
+        assert not _should_skip("/", SKIP_PATH_PREFIXES)

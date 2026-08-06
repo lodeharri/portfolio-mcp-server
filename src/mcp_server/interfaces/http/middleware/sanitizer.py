@@ -13,10 +13,25 @@ middleware then rewrites the body before the client sees it.
 Skipped routes
 --------------
 
-Two route prefixes are excluded from sanitization to keep cost low on
-known-safe endpoints: ``/healthz`` (a thin status probe) and
-``/mcp`` (the MCP transport whose payload bytes are already governed
-by the MCP tool-layer sanitizer on the wire).
+The skip set is a closed-world tuple literal at module scope; per
+change 003-playground-ui (``sanitizer-skip-list`` spec, Decision #9)
+the prefixes are:
+
+* ``/healthz`` — known-safe status probe.
+* ``/mcp`` — MCP transport (governed by the tool-layer sanitizer).
+* ``/chat`` — chat HTML page (would be double-sanitized and broken).
+* ``/chat/stream`` — SSE endpoint (middleware buffers full bodies
+  and would break per-token latency).
+* ``/playground`` — playground HTML page (template body must reach
+  the browser verbatim; HTMX/form references must remain intact).
+* ``/playground/api`` — per-tool form fragments (the use case's own
+  ``sanitize(...)`` is the only Layer 3 pass allowed; double-pass
+  would corrupt already-sanitized payloads).
+* ``/static`` — vendored HTMX and ``style.css`` (regex redaction
+  would corrupt the JS bytes).
+
+Adding a new prefix requires a spec change (closed-world invariant);
+the unit test asserts the exact tuple.
 """
 
 from __future__ import annotations
@@ -33,10 +48,20 @@ from mcp_server.security.output_sanitizer import OutputSanitizer
 __all__ = ["OutputSanitizerMiddleware"]
 
 
-# Path prefixes the middleware MUST NOT touch. These routes either
-# never echo user data (``/healthz``) or are governed by another
-# sanitizer layer (``/mcp``).
-SKIP_PATH_PREFIXES: tuple[str, ...] = ("/healthz", "/mcp")
+# Path prefixes the middleware MUST NOT touch. Closed-world set per
+# change 003-playground-ui (sanitizer-skip-list spec, Decision #9) and
+# the container-image directive to scope redaction to the routes that
+# actually emit user data. Order matters for readability — health first,
+# MCP second, then the playground/chat families, then static assets.
+SKIP_PATH_PREFIXES: tuple[str, ...] = (
+    "/healthz",
+    "/mcp",
+    "/chat",
+    "/chat/stream",
+    "/playground",
+    "/playground/api",
+    "/static",
+)
 
 
 class OutputSanitizerMiddleware(BaseHTTPMiddleware):
@@ -145,9 +170,7 @@ def _should_skip(path: str, prefixes: Iterable[str]) -> bool:
 # preserves a safe subset so the client doesn't see stale
 # Content-Length or Transfer-Encoding markers from the pre-sanitize
 # response.
-_HOP_HEADERS = frozenset(
-    {"content-length", "transfer-encoding", "connection", "keep-alive"}
-)
+_HOP_HEADERS = frozenset({"content-length", "transfer-encoding", "connection", "keep-alive"})
 
 
 def _filter_hop_headers(headers: dict[str, str]) -> dict[str, str]:
