@@ -31,11 +31,11 @@ Chain strategy: stacked-to-main
 
 ## Phase 3 — PR3: Pydantic AI Agent (`ask_portfolio`)
 
-- [ ] 3.1 RED→GREEN `application/use_cases/ask_portfolio.py::AskPortfolioUseCase` + tests with `pydantic_ai.models.function.FunctionModel` — rate limiter pre-check, sanitize `answer`, audit `agent.tool_call`, `MaxToolCallsExceeded` mapping, empty question → `ValueError`.
-- [ ] 3.2 GREEN `composition.py` — `_build_pydantic_agent(model_name="google-gla:gemini-2.0-flash", tools=[5 sibling wrappers], retries=2, max_tool_calls=5)` (lazy import, ADR-001); wire `AskPortfolioUseCase` with `rate_limiter`; add `ask_portfolio_use_case` field.
-- [ ] 3.3 GREEN extend `interfaces/mcp/tools.py` — append `ask_portfolio_tool` wrapper.
-- [ ] 3.4 GREEN `tests/integration/test_agent_registers_sibling_tools.py` — Agent has exactly 5 named tools.
-- [ ] 3.5 GREEN `tests/integration/test_mcp_tools_agent.py` — e2e smoke under `--mock-gemini`.
+- [x] 3.1 RED→GREEN `application/use_cases/ask_portfolio.py::AskPortfolioUseCase` + tests with `pydantic_ai.models.function.FunctionModel` — rate limiter pre-check, sanitize `answer`, audit `agent.tool_call`, `MaxToolCallsExceeded` mapping, empty question → `ValueError`.
+- [x] 3.2 GREEN `composition.py` — `_build_pydantic_agent(model_name="google:gemini-2.0-flash", tools=[5 sibling wrappers], retries=2, max_tool_calls=5)` (lazy import, ADR-001); wire `AskPortfolioUseCase` with `rate_limiter`; add `ask_portfolio_use_case` field.
+- [x] 3.3 GREEN extend `interfaces/mcp/tools.py` — append `ask_portfolio_tool` wrapper.
+- [x] 3.4 GREEN `tests/integration/test_agent_registers_sibling_tools.py` — Agent has exactly 5 named tools.
+- [x] 3.5 GREEN `tests/integration/test_mcp_tools_agent.py` — e2e smoke under `--mock-gemini`.
 
 ## Cross-Phase Gates (mandatory before any task is marked [x])
 
