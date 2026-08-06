@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block title %}MCP Playground{% endblock %}
+
+{% block content %}
+<h1>MCP Playground</h1>
+<p>
+    This page exposes the same six tools the MCP transport at
+    <a href="/mcp"><code>/mcp</code></a> serves — through a browser-first
+    playground. Recruiters land on this URL, click into
+    <a href="/playground"><code>/playground</code></a> for the five form
+    tools, or ask the agent on
+    <a href="/mcp"><code>/mcp</code></a> directly.
+</p>
+
+<section>
+    <h2>Indexed projects</h2>
+    {% if projects %}
+    <ul class="playground-projects">
+        {% for project in projects %}
+        <li>
+            <span class="id">{{ project.id }}</span>
+            — {{ project.display_name or project.id }}
+            {% if project.description %}<br>{{ project.description }}{% endif %}
+            <br>
+            <span class="chunks">{{ project.index_chunk_count }} indexed chunks</span>
+            ·
+            <a href="/playground">open in playground</a>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p>No projects declared in the manifest yet.</p>
+    {% endif %}
+</section>
+
+<div class="playground-cta">
+    <a href="/playground">Try the form tools</a>
+    <a class="secondary" href="/mcp">Inspect the MCP endpoint</a>
+</div>
+{% endblock %}

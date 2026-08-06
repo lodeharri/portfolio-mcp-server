@@ -31,6 +31,7 @@ from mcp_server.interfaces.http.healthz import build_healthz_router
 from mcp_server.interfaces.http.middleware.sanitizer import (
     OutputSanitizerMiddleware,
 )
+from mcp_server.interfaces.http.web import build_web_router
 from mcp_server.interfaces.mcp.server import mcp
 
 
@@ -82,6 +83,11 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
 
     # Operational probe.
     app.include_router(build_healthz_router())
+
+    # Browser-facing playground router (forms + landing + static).
+    # Mounted between /healthz and the /mcp sub-app per
+    # change 003-playground-ui (playground-ui spec schema).
+    app.include_router(build_web_router())
 
     # MCP sub-app mount.
     app.mount("/mcp", mcp_app)

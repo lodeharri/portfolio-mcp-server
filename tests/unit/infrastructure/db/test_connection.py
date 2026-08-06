@@ -225,3 +225,74 @@ class TestInMemoryContract:
             assert "vec_chunks_768" in tables
         finally:
             conn.close()
+
+
+# ---------------------------------------------------------------------------
+# cross-thread access (TestClient + single-worker prod safety)
+# ---------------------------------------------------------------------------
+
+
+class TestCrossThreadAccess:
+    """Connections opened by ``open_db`` / ``connect_in_memory`` MUST be
+    usable from a thread different from the one that opened them.
+
+    Why: FastAPI's ``TestClient`` (used in the playground integration
+    tests) drives ASGI handlers in a worker thread, not the main thread
+    that opened the sqlite connection during ``create_app``. Without
+    ``check_same_thread=False`` on the underlying ``sqlite3.connect``,
+    every request that touches the vector store raises
+    ``ProgrammingError: SQLite objects created in a thread can only be
+    used in that same thread`` (Python 3.10+).
+
+    Production safety: the running MCP server is a single FastAPI
+    process with ``--workers 1`` (see ``Dockerfile`` CMD), so each
+    request runs in the same thread that opened the connection. The
+    ``check_same_thread=False`` setting enables cross-thread use but
+    does NOT enable concurrent writes — sqlite3 still serializes all
+    access via its internal mutex. The change is safe for our single-
+    writer, multi-reader workload.
+    """
+
+    def test_open_db_connection_usable_from_other_thread(self, tmp_path) -> None:
+        import threading
+
+        from mcp_server.infrastructure.db.connection import open_db
+
+        conn = open_db(tmp_path / "test.sqlite")
+        errors: list[Exception] = []
+
+        def use_in_other_thread() -> None:
+            try:
+                rows = conn.execute("SELECT 1 AS one").fetchall()
+                assert rows[0][0] == 1
+            except Exception as exc:
+                errors.append(exc)
+
+        thread = threading.Thread(target=use_in_other_thread)
+        thread.start()
+        thread.join(timeout=5.0)
+        assert not thread.is_alive(), "thread did not finish within 5s"
+        assert not errors, f"cross-thread access failed: {errors}"
+        conn.close()
+
+    def test_connect_in_memory_usable_from_other_thread(self) -> None:
+        import threading
+
+        from mcp_server.infrastructure.db.connection import connect_in_memory
+
+        conn = connect_in_memory()
+        errors: list[Exception] = []
+
+        def use_in_other_thread() -> None:
+            try:
+                rows = conn.execute("SELECT 1 AS one").fetchall()
+                assert rows[0][0] == 1
+            except Exception as exc:
+                errors.append(exc)
+
+        thread = threading.Thread(target=use_in_other_thread)
+        thread.start()
+        thread.join(timeout=5.0)
+        assert not thread.is_alive(), "thread did not finish within 5s"
+        assert not errors, f"cross-thread access failed: {errors}"
+        conn.close()

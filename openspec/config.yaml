@@ -21,16 +21,19 @@ context: |
   Project: portfolio-mcp-server — Harrison Rodriguez's MCP (Model Context Protocol) server in Python
   with a built-in web playground for recruiter demo. Sibling to finance-coach-latam and
   landing-page-portfolio inside the parent portfolio/ folder.
-Stack: Python 3.10.12, FastAPI, FastMCP 3.2.4+ (Python MCP SDK), HTMX + htmx-ws, Jinja2,
-SQLite + sqlite-vec, Gemini 2.0 Flash + text-embedding-004, Pydantic AI 2.0.0+ (playground chat only),
-slowapi, gitleaks (Go binary via subprocess), Pydantic v2. arq/Redis dropped — stateless app,
-no async jobs needed at runtime.
+Stack: Python 3.10.12, FastAPI, FastMCP 3.2.4+ (Python MCP SDK), HTMX 1.9.10 (vendored),
+Jinja2, SQLite + sqlite-vec, Gemini 2.0 Flash + text-embedding-004, Pydantic AI 2.0.0+
+(playground chat only), slowapi, gitleaks (Go binary via subprocess), Pydantic v2.
+arq/Redis dropped — stateless app, no async jobs needed at runtime.
   Architecture: single FastAPI process serves both the MCP server (FastMCP mounted on a sub-app)
-  and the HTML playground (Jinja2 templates + HTMX). No separate Node process.
+  and the HTML playground (Jinja2 templates + HTMX + native SSE via FastAPI EventSourceResponse).
+  No separate Node process.
   Testing: pytest + pytest-asyncio + httpx.AsyncClient (unit/integration);
   Playwright + axe-core (E2E playground).
   Linting/formatting: ruff (Python) + prettier (Jinja/HTML/JS).
-  Container: Docker multi-stage build; final image target <150 MB.
+  Container: Docker multi-stage build; final image target <500 MB (relaxed from
+  <150 MB per change 003-playground-ui: Python + AI dependencies, LangGraph, and
+  sqlite-vec require the current headroom; Alpine migration deferred).
 Deploy: Primary Fly.io (~$2.02/mo for 256 MB shared VM 24/7). Fly.io free tier was
 discontinued Oct 2024 for new users — $0/mo target no longer realistic for new accounts.
 Deploy is platform-agnostic: same Dockerfile works on Hugging Face Spaces ($0, cold starts),
@@ -55,7 +58,11 @@ rules:
     - Document architecture decisions with rationale (ADRs in design.md appendix)
     - Manifest scoping is the single source of truth for which projects are indexed;
       never index by directory traversal
-    - Streaming chat over HTMX uses htmx-ws (WebSocket), not Server-Sent Events
+    - Streaming chat over HTMX uses native browser SSE/fetch (FastAPI
+      EventSourceResponse) — NOT htmx-ws/WebSocket. Per Decision #12 and
+      ADR-002: HTMX 1.9 has no built-in SSE without the htmx-sse extension,
+      and POSTing the full messages array is required for stateless chat,
+      which native browser fetch handles cleanly.
   tasks:
     - Group by phase, use hierarchical numbering
     - Keep tasks completable in one session
@@ -119,4 +126,7 @@ invariants:
   - "projects.manifest.yaml is the ONLY way to declare what gets indexed"
   - "Free-tier cost discipline: $0/month, no exceptions"
   - "Single FastAPI process serves MCP + playground; no second service"
-  - "Container image final size <150 MB"
+  - "Container image final size <500 MB"  # relaxed per change 003-playground-ui;
+    # original target was <150 MB; Python + AI deps + LangGraph + sqlite-vec require
+    # current headroom. Alpine migration deferred to a future change to drive the
+    # budget back toward 150 MB.

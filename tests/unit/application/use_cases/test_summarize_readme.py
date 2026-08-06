@@ -67,7 +67,47 @@ def test_reads_readme_with_default_token_budget(tmp_path: Path) -> None:
     assert result.project_id == "demo"
     assert result.source == str(readme)
     assert result.summary == "A concise summary"
-    assert llm.calls == [(readme.read_text(), 300)]
+    assert llm.calls == [(readme.read_text(), 200)]
+
+
+def test_default_max_tokens_is_200(tmp_path: Path) -> None:
+    """Decision #12 / change 003-playground-ui: the default ``max_tokens``
+    for ``summarize_readme`` is **200** (was 300). A fresh request
+    without an explicit ``max_tokens`` MUST call the LLM with
+    ``max_tokens=200``.
+    """
+    readme = tmp_path / "README.md"
+    readme.write_text("A recruiter-facing overview.")
+    project = Project(id="demo", path=tmp_path, readme_path="README.md")
+    llm = FakeLlm("summary")
+    audit = FakeAudit()
+    uc = SummarizeReadmeUseCase(
+        manifest=FakeManifest(project), llm=llm,
+        sanitizer=OutputSanitizer(audit=audit), audit=audit,
+    )
+
+    uc.execute(SummarizeReadmeRequest(project_id="demo"))
+
+    assert llm.calls == [(readme.read_text(), 200)]
+
+
+def test_explicit_max_tokens_overrides_default(tmp_path: Path) -> None:
+    """The default 200 is the *floor*, not a *ceiling*. A
+    caller-supplied ``max_tokens=500`` MUST be passed through to the LLM.
+    """
+    readme = tmp_path / "README.md"
+    readme.write_text("Long-form README content.")
+    project = Project(id="demo", path=tmp_path, readme_path="README.md")
+    llm = FakeLlm("summary")
+    audit = FakeAudit()
+    uc = SummarizeReadmeUseCase(
+        manifest=FakeManifest(project), llm=llm,
+        sanitizer=OutputSanitizer(audit=audit), audit=audit,
+    )
+
+    uc.execute(SummarizeReadmeRequest(project_id="demo", max_tokens=500))
+
+    assert llm.calls == [(readme.read_text(), 500)]
 
 
 def test_sanitizes_summary_and_falls_back_to_id(tmp_path: Path) -> None:

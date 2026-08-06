@@ -1,0 +1,22 @@
+{# Fragment returned by POST /playground/api/list_projects.
+
+Context variables:
+- projects: list of dicts (id, display_name, description, index_chunk_count)
+- error:    optional str — sanitized error message when the use case failed
+#}
+{% if error %}
+<p class="error">{{ error }}</p>
+{% elif not projects %}
+<p>No projects declared in the manifest yet.</p>
+{% else %}
+<ul class="playground-projects" role="list">
+    {% for project in projects %}
+    <li>
+        <span class="id">{{ project.id }}</span>
+        — {{ project.display_name or project.id }}
+        {% if project.description %}<div>{{ project.description }}</div>{% endif %}
+        <span class="chunks">{{ project.index_chunk_count }} indexed chunks</span>
+    </li>
+    {% endfor %}
+</ul>
+{% endif %}

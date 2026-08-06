@@ -1,4 +1,12 @@
-"""Application use case for explaining a project's architecture from ADRs."""
+"""Application use case for explaining a project's architecture from ADRs.
+
+The use case reads the manifest-declared ADR for a project and asks the
+LLM for a one-paragraph recruiter-friendly summary, max ``max_tokens``
+(350 by default — see Decision #12 / change 003-playground-ui for the
+short-first discipline).
+
+Hexagonal contract: ports only — no FastAPI, no concrete adapters.
+"""
 
 from __future__ import annotations
 
@@ -16,7 +24,9 @@ MAX_ADR_BYTES = 64 * 1024
 @dataclass(frozen=True)
 class ExplainArchitectureRequest:
     project_id: str
-    max_tokens: int = 500
+    # Short-first principle (Decision #12): default = 350 tokens, the
+    # minimum that completes a typical ADR summary. Caller can override.
+    max_tokens: int = 350
 
 
 @dataclass(frozen=True)
