@@ -316,6 +316,7 @@ def _as_payload(result: Any) -> dict[str, Any]:
     description="Summarize a project's architecture from its ADRs.",
 )
 async def explain_architecture_tool(project_id: str, max_tokens: int = 500) -> dict[str, Any]:
+    """Summarize a project's architecture from its ADRs."""
     try:
         result = _require_use_case(
             _explain_architecture_use_case, "ExplainArchitectureUseCase"
@@ -332,6 +333,7 @@ async def explain_architecture_tool(project_id: str, max_tokens: int = 500) -> d
     description="Summarize a project's README in recruiter-friendly prose.",
 )
 async def summarize_readme_tool(project_id: str, max_tokens: int = 300) -> dict[str, Any]:
+    """Summarize a project's README in recruiter-friendly prose."""
     try:
         result = _require_use_case(_summarize_readme_use_case, "SummarizeReadmeUseCase").execute(
             SummarizeReadmeRequest(project_id=project_id, max_tokens=max_tokens)
@@ -346,6 +348,7 @@ async def summarize_readme_tool(project_id: str, max_tokens: int = 300) -> dict[
     description="Return a project's architecture diagram as base64-encoded SVG.",
 )
 async def get_architecture_diagram_tool(project_id: str) -> dict[str, Any]:
+    """Return a project's architecture diagram as base64-encoded SVG."""
     try:
         result = _require_use_case(
             _get_architecture_diagram_use_case, "GetArchitectureDiagramUseCase"

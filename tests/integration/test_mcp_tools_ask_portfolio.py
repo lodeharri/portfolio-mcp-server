@@ -22,6 +22,9 @@ Two layers of coverage:
 from __future__ import annotations
 
 import asyncio
+from typing import Any
+
+import pytest
 
 
 def _six_tool_names() -> set[str]:
@@ -52,6 +55,50 @@ def test_all_six_tools_are_registered() -> None:
         "ask_portfolio",
     }
     assert expected <= names, f"missing tools: {expected - names}"
+
+
+def test_ask_portfolio_succeeds_after_fresh_composition_wiring(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from fastmcp import Client
+    from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
+    from langchain_core.messages import AIMessage
+
+    from mcp_server.app import create_app
+    from mcp_server.config import AppConfig
+    from mcp_server.infrastructure.langchain import LangChainAgentAdapter
+    from mcp_server.interfaces.mcp import tools
+    from mcp_server.interfaces.mcp.server import mcp
+
+    class FakeToolCallingModel(FakeMessagesListChatModel):
+        def bind_tools(self, tools: Any, **kwargs: Any) -> Any:
+            return self
+
+    def create_fake_agent(api_key: str, model: str) -> LangChainAgentAdapter:
+        return LangChainAgentAdapter(
+            api_key=api_key,
+            model=model,
+            llm=FakeToolCallingModel(responses=[AIMessage(content="mock answer")]),
+        )
+
+    monkeypatch.setattr(
+        "mcp_server.composition.create_langchain_agent",
+        create_fake_agent,
+    )
+    previous_use_case = tools.get_ask_portfolio_use_case()
+    try:
+        create_app(AppConfig(gemini_api_key="fake"))
+
+        async def call() -> object:
+            async with Client(mcp) as client:
+                return await client.call_tool("ask_portfolio", {"question": "test"})
+
+        payload = _extract_payload(asyncio.run(call()))
+    finally:
+        tools.set_ask_portfolio_use_case(previous_use_case)
+
+    assert isinstance(payload, dict)
+    assert payload["answer"] == "mock answer"
 
 
 def test_ask_portfolio_call_returns_mock_answer() -> None:
