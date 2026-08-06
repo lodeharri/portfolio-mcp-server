@@ -84,7 +84,16 @@ def open_db(path: str | Path) -> sqlite3.Connection:
     """
     db_path = Path(path).resolve()
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(db_path))
+    # ``check_same_thread=False`` allows the connection to be used from a
+    # thread different from the one that opened it. The MCP server is a
+    # single FastAPI process with ``--workers 1`` (see Dockerfile CMD), so
+    # production request handlers run in the same thread that opened the
+    # connection at startup — the flag is a no-op there. It IS load-
+    # bearing for TestClient (which drives ASGI handlers in a worker
+    # thread) and for any future background-task consumer. sqlite3 still
+    # serializes all access internally via its mutex; the flag enables
+    # cross-thread *use* but never cross-thread *concurrency*.
+    conn = sqlite3.connect(str(db_path), check_same_thread=False)
     try:
         sqlite_vec.load(conn)
     except Exception as exc:
@@ -148,8 +157,11 @@ def connect_in_memory() -> sqlite3.Connection:
     Convenience for unit tests that exercise ``SqliteVecStore`` without
     touching the filesystem. Returns a fresh connection; the caller
     owns lifetime.
+
+    ``check_same_thread=False`` is set for the same reason as in
+    :func:`open_db` (see that function's docstring for the rationale).
     """
-    conn = sqlite3.connect(":memory:")
+    conn = sqlite3.connect(":memory:", check_same_thread=False)
     sqlite_vec.load(conn)
     _apply_schema(conn)
     return conn

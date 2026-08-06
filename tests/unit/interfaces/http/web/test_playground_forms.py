@@ -166,6 +166,30 @@ class TestSearchCodeEndpoint:
         response = client.post("/playground/api/search_code", data={})  # type: ignore[attr-defined]
         assert response.status_code in (400, 422)
 
+    def test_search_code_with_query_returns_html_fragment(self, client: object) -> None:
+        """Posting a real ``query`` MUST return 200 with a Jinja2 fragment
+        (not crash with a cross-thread sqlite error).
+
+        Pre-existing bug fixed in PR1: ``sqlite3.connect`` opened the
+        vector-store connection on the main thread but TestClient runs
+        handlers in a worker thread — every ``search_code`` request
+        raised ``ProgrammingError: SQLite objects created in a thread
+        can only be used in that same thread``. With the fix in
+        ``connection.py`` (both ``sqlite3.connect`` calls set
+        ``check_same_thread=False``) the route returns a fragment.
+
+        The fragment MAY be empty (the in-memory test DB has no real
+        Gemini embeddings to match against the mock query embedding);
+        the assertion is on response shape, not hit count.
+        """
+        response = client.post(
+            "/playground/api/search_code",
+            data={"query": "authentication"},
+        )  # type: ignore[attr-defined]
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/html")
+        _fragment_html_only(response.text)
+
 
 # ---------------------------------------------------------------------------
 # explain_architecture endpoint
