@@ -24,7 +24,13 @@ from importlib import metadata as importlib_metadata
 from pathlib import Path
 from typing import Final
 
+from dotenv import load_dotenv
 from pydantic import BaseModel, ConfigDict, Field
+
+# Load .env file at module import time. Idempotent and silent if .env
+# doesn't exist. This must happen BEFORE any os.environ access below
+# (e.g. in build_info_from_env which runs at module import).
+load_dotenv()
 
 # ---------------------------------------------------------------------------
 # Build-time defaults

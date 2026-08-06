@@ -34,6 +34,7 @@ dependencies = [
     "langchain-google-genai>=2.0.0",     # Gemini chat model integration
     "langgraph>=0.2.0",                  # ReAct agent runtime
     "google-genai>=1.0.0",               # NEW Gemini SDK (replaces deprecated google-generativeai; ~50 MB smaller)
+    "python-dotenv>=1.0.0",              # Loads .env file for local dev (no effect in Docker)
     "slowapi>=0.1.9",                    # Rate limiting (~30 req/min/IP)
     "structlog>=24.1.0",                 # Structured JSON logging for security/audit.py
     "sqlite-vec>=0.1.0",                 # Vector search extension (single-file, no external DB)
