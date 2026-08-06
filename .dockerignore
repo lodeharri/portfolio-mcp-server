@@ -27,10 +27,15 @@ __pycache__
 test-results
 playwright-report
 
-# Local dev fixtures and the pre-baked vector index (the builder
-# produces a fresh one with `python -m mcp_server.interfaces.cli.preindex`).
-data/index.sqlite
-data/index.sqlite-*
+# Local dev fixtures and the pre-baked vector index. The builder
+# prefers a pre-populated `data/index.sqlite` from the build context
+# (recruiter-demo path: zero-key startup with real chunks baked in)
+# and falls back to `scripts/bake_schema.py` (empty schema) when the
+# file is absent. The pre-populated DB is gitignored so each developer
+# regenerates it locally; the build context still includes it because
+# Docker COPYs from the working tree, not from git.
+# data/index.sqlite
+# data/index.sqlite-*
 
 # Docker compose variants not used by the deploy workflow.
 docker-compose*.yml
