@@ -416,11 +416,11 @@ def test_ask_portfolio_tool_is_registered() -> None:
 def test_ask_portfolio_tool_forwards_request_to_use_case() -> None:
     """The wrapper builds an ``AskPortfolioRequest`` from the kwargs
     and awaits ``use_case.aexecute(...)``."""
-    from mcp_server.interfaces.mcp import tools
     from mcp_server.application.use_cases.ask_portfolio import (
         AskPortfolioRequest,
         AskPortfolioResult,
     )
+    from mcp_server.interfaces.mcp import tools
 
     fake = _FakeAskPortfolioUseCase(
         result=AskPortfolioResult(
