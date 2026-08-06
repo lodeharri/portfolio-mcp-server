@@ -45,20 +45,36 @@ result. This is the ADR-003 "sanitize at the source" discipline.
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from typing import Any
 
+from mcp_server.application.use_cases.explain_architecture import (
+    ExplainArchitectureRequest,
+    ExplainArchitectureUseCase,
+)
+from mcp_server.application.use_cases.get_architecture_diagram import (
+    GetArchitectureDiagramRequest,
+    GetArchitectureDiagramUseCase,
+)
 from mcp_server.application.use_cases.list_projects import ListProjectsUseCase
 from mcp_server.application.use_cases.search_code import SearchCodeRequest, SearchCodeUseCase
+from mcp_server.application.use_cases.summarize_readme import (
+    SummarizeReadmeRequest,
+    SummarizeReadmeUseCase,
+)
 from mcp_server.domain.exceptions import DomainError
 from mcp_server.interfaces.mcp.server import mcp
 from mcp_server.interfaces.mcp.tool_errors import translate_tool_error
 
 __all__ = [
+    "explain_architecture_tool",
+    "get_architecture_diagram_tool",
     "get_list_projects_use_case",
     "get_search_use_case",
     "list_projects_tool",
     "search_code_tool",
     "set_use_cases",
+    "summarize_readme_tool",
 ]
 
 
@@ -73,12 +89,18 @@ __all__ = [
 # importing this module.
 _list_projects_use_case: ListProjectsUseCase | None = None
 _search_use_case: SearchCodeUseCase | None = None
+_explain_architecture_use_case: ExplainArchitectureUseCase | None = None
+_summarize_readme_use_case: SummarizeReadmeUseCase | None = None
+_get_architecture_diagram_use_case: GetArchitectureDiagramUseCase | None = None
 
 
 def set_use_cases(
     *,
     list_projects_uc: ListProjectsUseCase,
     search_uc: SearchCodeUseCase,
+    explain_architecture_uc: ExplainArchitectureUseCase | None = None,
+    summarize_readme_uc: SummarizeReadmeUseCase | None = None,
+    get_architecture_diagram_uc: GetArchitectureDiagramUseCase | None = None,
 ) -> None:
     """Populate the module-level use case container.
 
@@ -87,8 +109,13 @@ def set_use_cases(
     previous references (useful for tests that swap fakes in/out).
     """
     global _list_projects_use_case, _search_use_case
+    global _explain_architecture_use_case, _summarize_readme_use_case
+    global _get_architecture_diagram_use_case
     _list_projects_use_case = list_projects_uc
     _search_use_case = search_uc
+    _explain_architecture_use_case = explain_architecture_uc
+    _summarize_readme_use_case = summarize_readme_uc
+    _get_architecture_diagram_use_case = get_architecture_diagram_uc
 
 
 def get_list_projects_use_case() -> ListProjectsUseCase:
@@ -192,6 +219,58 @@ async def search_code_tool(
     except DomainError as exc:
         raise translate_tool_error(exc) from exc
     except ValueError as exc:
-        # Input validation errors (empty query, top_k > 50) — also
-        # translated to ToolError via the helper.
+        raise translate_tool_error(exc) from exc
+
+
+def _require_use_case(use_case: Any, name: str) -> Any:
+    if use_case is None:
+        raise RuntimeError(f"{name} not wired — composition root must call set_use_cases()")
+    return use_case
+
+
+def _as_payload(result: Any) -> dict[str, Any]:
+    return asdict(result) if hasattr(result, "__dataclass_fields__") else dict(result)
+
+
+@mcp.tool(
+    name="explain_architecture",
+    description="Summarize a project's architecture from its ADRs.",
+)
+async def explain_architecture_tool(project_id: str, max_tokens: int = 500) -> dict[str, Any]:
+    try:
+        result = _require_use_case(
+            _explain_architecture_use_case, "ExplainArchitectureUseCase"
+        ).execute(
+            ExplainArchitectureRequest(project_id=project_id, max_tokens=max_tokens)
+        )
+        return _as_payload(result)
+    except (DomainError, ValueError, FileNotFoundError) as exc:
+        raise translate_tool_error(exc) from exc
+
+
+@mcp.tool(
+    name="summarize_readme",
+    description="Summarize a project's README in recruiter-friendly prose.",
+)
+async def summarize_readme_tool(project_id: str, max_tokens: int = 300) -> dict[str, Any]:
+    try:
+        result = _require_use_case(_summarize_readme_use_case, "SummarizeReadmeUseCase").execute(
+            SummarizeReadmeRequest(project_id=project_id, max_tokens=max_tokens)
+        )
+        return _as_payload(result)
+    except (DomainError, ValueError, FileNotFoundError) as exc:
+        raise translate_tool_error(exc) from exc
+
+
+@mcp.tool(
+    name="get_architecture_diagram",
+    description="Return a project's architecture diagram as base64-encoded SVG.",
+)
+async def get_architecture_diagram_tool(project_id: str) -> dict[str, Any]:
+    try:
+        result = _require_use_case(
+            _get_architecture_diagram_use_case, "GetArchitectureDiagramUseCase"
+        ).execute(GetArchitectureDiagramRequest(project_id=project_id))
+        return _as_payload(result)
+    except (DomainError, ValueError, FileNotFoundError) as exc:
         raise translate_tool_error(exc) from exc

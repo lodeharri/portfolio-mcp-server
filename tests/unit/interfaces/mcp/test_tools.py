@@ -320,3 +320,67 @@ async def _call_search_code_tool(
 
     tool = await mcp.get_tool("search_code")
     return await tool.fn(query=query, top_k=top_k, project_id=project_id)
+
+
+class _FakeReaderUseCase:
+    def __init__(self, result: dict[str, Any], raise_exc: Exception | None = None):
+        self.result = result
+        self.raise_exc = raise_exc
+        self.calls: list[Any] = []
+
+    def execute(self, request: Any) -> Any:
+        self.calls.append(request)
+        if self.raise_exc:
+            raise self.raise_exc
+        return self.result
+
+
+def test_file_reader_tools_are_registered_and_forward_requests() -> None:
+    from mcp_server.interfaces.mcp import tools
+
+    explain = _FakeReaderUseCase({"project_id": "p", "summary": "s"})
+    readme = _FakeReaderUseCase({"project_id": "p", "summary": "r"})
+    diagram = _FakeReaderUseCase({"project_id": "p", "data": "d"})
+    tools.set_use_cases(
+        list_projects_uc=_FakeListProjectsUseCase(), search_uc=_FakeSearchCodeUseCase(),
+        explain_architecture_uc=explain, summarize_readme_uc=readme,
+        get_architecture_diagram_uc=diagram,
+    )
+
+    async def call() -> tuple[Any, Any, Any, set[str]]:
+        server = tools.mcp
+        names = {item.name for item in await server.list_tools()}
+        return (
+            await (await server.get_tool("explain_architecture")).fn(project_id="p", max_tokens=7),
+            await (await server.get_tool("summarize_readme")).fn(project_id="p", max_tokens=8),
+            await (await server.get_tool("get_architecture_diagram")).fn(project_id="p"),
+            names,
+        )
+
+    explain_out, readme_out, diagram_out, names = asyncio.run(call())
+    assert explain_out == {"project_id": "p", "summary": "s"}
+    assert readme_out == {"project_id": "p", "summary": "r"}
+    assert diagram_out == {"project_id": "p", "data": "d"}
+    assert {"explain_architecture", "summarize_readme", "get_architecture_diagram"} <= names
+    assert explain.calls[0].max_tokens == 7
+    assert readme.calls[0].max_tokens == 8
+
+
+def test_file_reader_domain_errors_are_translated() -> None:
+    from fastmcp.exceptions import ToolError
+
+    from mcp_server.interfaces.mcp import tools
+
+    failing = _FakeReaderUseCase({}, ManifestProjectNotFoundError("not declared"))
+    tools.set_use_cases(
+        list_projects_uc=_FakeListProjectsUseCase(), search_uc=_FakeSearchCodeUseCase(),
+        explain_architecture_uc=failing,
+        summarize_readme_uc=_FakeReaderUseCase({}),
+        get_architecture_diagram_uc=_FakeReaderUseCase({}),
+    )
+
+    async def call() -> Any:
+        return await (await tools.mcp.get_tool("explain_architecture")).fn(project_id="x")
+
+    with pytest.raises(ToolError):
+        asyncio.run(call())

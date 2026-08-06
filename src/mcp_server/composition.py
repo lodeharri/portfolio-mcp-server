@@ -34,9 +34,14 @@ from mcp_server.application.ports.manifest import ManifestPort
 from mcp_server.application.ports.rate_limiter import RateLimiterPort
 from mcp_server.application.ports.secret_scanner import SecretScannerPort
 from mcp_server.application.ports.vector_store import VectorStorePort
+from mcp_server.application.use_cases.explain_architecture import ExplainArchitectureUseCase
+from mcp_server.application.use_cases.get_architecture_diagram import (
+    GetArchitectureDiagramUseCase,
+)
 from mcp_server.application.use_cases.index_project import IndexProjectUseCase
 from mcp_server.application.use_cases.list_projects import ListProjectsUseCase
 from mcp_server.application.use_cases.search_code import SearchCodeUseCase
+from mcp_server.application.use_cases.summarize_readme import SummarizeReadmeUseCase
 from mcp_server.config import AppConfig, load_config
 from mcp_server.domain.exceptions import (
     ManifestError,
@@ -95,8 +100,11 @@ class Composition:
     audit: AuditLogger
     sanitizer: OutputSanitizer
     preindex_use_case: object | None
-    list_projects_use_case: ListProjectsUseCase | None
-    search_use_case: SearchCodeUseCase | None
+    list_projects_use_case: ListProjectsUseCase
+    search_use_case: SearchCodeUseCase
+    explain_architecture_use_case: ExplainArchitectureUseCase
+    summarize_readme_use_case: SummarizeReadmeUseCase
+    get_architecture_diagram_use_case: GetArchitectureDiagramUseCase
 
 
 def create_composition(
@@ -192,6 +200,16 @@ def create_composition(
         audit=audit,
     )
 
+    summarize_readme_use_case = SummarizeReadmeUseCase(
+        manifest=manifest, llm=llm, sanitizer=sanitizer, audit=audit
+    )
+    explain_architecture_use_case = ExplainArchitectureUseCase(
+        manifest=manifest, llm=llm, sanitizer=sanitizer, audit=audit
+    )
+    get_architecture_diagram_use_case = GetArchitectureDiagramUseCase(
+        manifest=manifest, sanitizer=sanitizer, audit=audit
+    )
+
     # Side-effect import: register the @mcp.tool wrappers with the
     # FastMCP instance (the decorator runs at module-load time) and
     # then populate the wrapper's use case container with the
@@ -204,6 +222,9 @@ def create_composition(
     _tools.set_use_cases(
         list_projects_uc=list_projects_use_case,
         search_uc=search_use_case,
+        explain_architecture_uc=explain_architecture_use_case,
+        summarize_readme_uc=summarize_readme_use_case,
+        get_architecture_diagram_uc=get_architecture_diagram_use_case,
     )
 
     return Composition(
@@ -219,6 +240,9 @@ def create_composition(
         preindex_use_case=preindex_use_case,
         list_projects_use_case=list_projects_use_case,
         search_use_case=search_use_case,
+        explain_architecture_use_case=explain_architecture_use_case,
+        summarize_readme_use_case=summarize_readme_use_case,
+        get_architecture_diagram_use_case=get_architecture_diagram_use_case,
     )
 
 
