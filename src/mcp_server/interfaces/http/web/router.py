@@ -26,6 +26,7 @@ from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from mcp_server.interfaces.http.web.chat import build_chat_router
+from mcp_server.interfaces.http.web.paths import resolve_playground_subdir
 from mcp_server.interfaces.http.web.playground import register_playground_routes
 from mcp_server.interfaces.http.web.templates import templates
 
@@ -35,14 +36,13 @@ __all__ = ["build_web_router"]
 def _static_dir() -> Path:
     """Return the absolute playground/static/ directory.
 
-    Walks up from this file's location to the repo root (parent of
-    ``src/``), then into ``playground/static/``. Works for editable
-    installs and for the Docker image whose layout is
-    ``/app/playground/...``.
+    Delegates to :func:`resolve_playground_subdir` which handles
+    source-tree walks (editable installs), the Docker WORKDIR layout
+    (``/app/playground/``), and the ``MCP_SERVER_PLAYGROUND_DIR`` env
+    var override. Raises :class:`FileNotFoundError` with every
+    attempted path if none resolve.
     """
-    # parents[5] = repo root (../src/mcp_server/interfaces/http/web/router.py
-    # is 5 deep into the repo).
-    return Path(__file__).resolve().parents[5] / "playground" / "static"
+    return resolve_playground_subdir("static")
 
 
 class _StaticFilesWithCacheControl(StaticFiles):
