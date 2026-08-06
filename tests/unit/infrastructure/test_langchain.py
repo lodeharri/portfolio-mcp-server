@@ -59,7 +59,9 @@ async def test_agent_unwraps_tools_and_extracts_calls(monkeypatch: pytest.Monkey
         "mcp_server.infrastructure.langchain.create_react_agent",
         fake_create_react_agent,
     )
-    tool_function = lambda: None
+    def tool_function() -> None:
+        return None
+
     adapter = LangChainAgentAdapter(api_key="test", llm=object())
 
     response = await adapter.run(

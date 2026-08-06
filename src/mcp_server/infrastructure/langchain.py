@@ -65,7 +65,8 @@ class LangChainAgentAdapter:
         self._llm = llm or ChatGoogleGenerativeAI(model=model, api_key=api_key)
 
     async def run(self, request: AgentRequest, tools: Sequence[Any]) -> AgentResponse:
-        agent = create_react_agent(self._llm, list(tools))
+        tool_functions = [getattr(tool, "fn", tool) for tool in tools]
+        agent = create_react_agent(self._llm, tool_functions)
         messages = [*(request.history or []), {"role": "user", "content": request.question}]
         result = await agent.ainvoke(
             {"messages": messages},
