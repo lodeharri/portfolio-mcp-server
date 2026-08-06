@@ -176,6 +176,7 @@ def create_composition(
     api_key = config.gemini_api_key or ""
     embedding = create_langchain_embedding(
         api_key="" if use_mock_gemini else api_key,
+        model=config.gemini_embedding_model,
         embedding_dim=config.embedding_dim,
     )
     if use_mock_gemini:

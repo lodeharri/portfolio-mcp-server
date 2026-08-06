@@ -139,6 +139,7 @@ class AppConfig(BaseModel):
     port: int = _DEFAULT_PORT
     gemini_api_key: str | None = None
     gemini_model: str = "gemini-flash-latest"
+    gemini_embedding_model: str = "gemini-embedding-001"
     embedding_dim: int = _DEFAULT_EMBEDDING_DIM
     manifest_path: Path = _DEFAULT_MANIFEST_PATH
     data_dir: Path = _DEFAULT_DATA_DIR
@@ -185,6 +186,8 @@ def load_config() -> AppConfig:
         overrides["gemini_api_key"] = os.environ["GEMINI_API_KEY"]
         if "GEMINI_MODEL" in os.environ:
             overrides["gemini_model"] = os.environ["GEMINI_MODEL"]
+        if "GEMINI_EMBEDDING_MODEL" in os.environ:
+            overrides["gemini_embedding_model"] = os.environ["GEMINI_EMBEDDING_MODEL"]
     if "EMBEDDING_DIM" in os.environ:
         overrides["embedding_dim"] = os.environ["EMBEDDING_DIM"]
     if "MANIFEST_PATH" in os.environ:

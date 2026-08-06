@@ -209,12 +209,13 @@ class LangChainEmbeddingAdapter:
     def __init__(
         self,
         api_key: str,
-        model: str = "text-embedding-004",
+        model: str = "gemini-embedding-001",
         embedding_dim: int = 768,
     ) -> None:
         self._embeddings = GoogleGenerativeAIEmbeddings(
             model=model,
             google_api_key=api_key,
+            output_dimensionality=embedding_dim,
         )
         self.embedding_dim = embedding_dim
 
@@ -265,7 +266,7 @@ class _MockLangChainEmbeddingAdapter:
 
 def create_langchain_embedding(
     api_key: str = "",
-    model: str = "text-embedding-004",
+    model: str = "gemini-embedding-001",
     embedding_dim: int = 768,
 ) -> LangChainEmbeddingAdapter | _MockLangChainEmbeddingAdapter:
     """Create the LangChain embedding adapter. Mock when ``api_key`` is empty.

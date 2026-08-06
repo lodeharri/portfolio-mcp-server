@@ -121,13 +121,14 @@ class TestPlaygroundRoute:
         assert response.status_code == 200
         assert response.headers["content-type"].startswith("text/html")
 
-    def test_playground_renders_exactly_five_forms(self, client: object) -> None:
-        """The page MUST render exactly five <form> elements — one per
-        non-agent MCP tool.
+    def test_playground_renders_six_forms(self, client: object) -> None:
+        """The page MUST render exactly six <form> elements — five
+        non-agent MCP tools plus ask_portfolio (which redirects to /chat
+        with the question pre-filled).
         """
         text = client.get("/playground").text  # type: ignore[attr-defined]
-        assert text.count("<form") == 5, (
-            f"playground page must have exactly 5 forms, found {text.count('<form')}"
+        assert text.count("<form") == 6, (
+            f"playground page must have exactly 6 forms, found {text.count('<form')}"
         )
 
     def test_playground_forms_target_their_endpoints(self, client: object) -> None:

@@ -64,7 +64,8 @@ MAX_ATTEMPTS: Final[int] = 3
 BASE_DELAY: Final[float] = 1.0
 MAX_DELAY: Final[float] = 30.0
 DEFAULT_EMBEDDING_DIM: Final[int] = 768
-DEFAULT_EMBEDDING_MODEL: Final[str] = "text-embedding-004"  # 768-dim, free tier
+DEFAULT_EMBEDDING_MODEL: Final[str] = "gemini-embedding-001"
+# Note: passes outputDimensionality=768 to keep the 768-dim schema
 
 
 # ---------------------------------------------------------------------------

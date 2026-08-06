@@ -1,17 +1,18 @@
 {% extends "base.html" %}
 
-{% block title %}MCP Playground{% endblock %}
+{% block title %}Harrison Rodriguez — MCP Portfolio Server{% endblock %}
 
 {% block content %}
-<h1>MCP Playground</h1>
-<p>
-    This page exposes the same six tools the MCP transport at
-    <a href="/mcp"><code>/mcp</code></a> serves — through a browser-first
-    playground. Recruiters land on this URL, click into
-    <a href="/playground"><code>/playground</code></a> for the five form
-    tools, or ask the agent on
-    <a href="/mcp"><code>/mcp</code></a> directly.
-</p>
+<header class="explorer-hero">
+    <h1>Harrison Rodriguez — MCP Portfolio Server</h1>
+    <p class="hero-lede">
+        An <a href="/mcp" rel="noopener"><code>/mcp</code></a> Model Context Protocol server exposing
+        <strong>{{ projects|length }} portfolio project{{ 's' if projects|length != 1 else '' }}</strong>
+        through six tools — list projects, semantic code search, architecture summaries,
+        README digests, architecture diagrams, and a free-form agent. Click
+        <em>Try the MCP playground</em> below to drive every tool from the browser.
+    </p>
+</header>
 
 <section>
     <h2>Indexed projects</h2>
@@ -35,7 +36,13 @@
 </section>
 
 <div class="playground-cta">
-    <a href="/playground">Try the form tools</a>
-    <a class="secondary" href="/mcp">Inspect the MCP endpoint</a>
+    <a href="/playground">Try the MCP playground</a>
+    <a class="secondary" href="/chat">Chat with the portfolio agent</a>
 </div>
+
+<footer class="playground-footer">
+    MCP transport (JSON-RPC over Streamable HTTP) is live at
+    <a href="/mcp"><code>/mcp</code></a> for clients like Claude Desktop, Cursor, or
+    <code>npx&nbsp;@modelcontextprotocol/inspector</code>.
+</footer>
 {% endblock %}

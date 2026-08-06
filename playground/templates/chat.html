@@ -90,6 +90,31 @@
     var status = document.getElementById("chat-status");
     var persistenceNotice = document.getElementById("chat-persistence-notice");
 
+    // Pre-fill from /playground ?prefill=... redirect so the user doesn't
+    // retype their question. The session UUID + history load happens
+    // after this; the prefill text only fills the input once.
+    (function prefillFromQuery() {
+        try {
+            var params = new URLSearchParams(window.location.search);
+            var prefill = params.get("prefill");
+            if (prefill && input) {
+                input.value = prefill;
+                // Clean the URL so a reload doesn't re-prefill.
+                if (window.history && window.history.replaceState) {
+                    var url = new URL(window.location.href);
+                    url.searchParams.delete("prefill");
+                    window.history.replaceState({}, "", url.toString());
+                }
+                // Focus and place caret at end so the user can append context.
+                setTimeout(function () {
+                    input.focus();
+                    var v = input.value;
+                    input.setSelectionRange(v.length, v.length);
+                }, 50);
+            }
+        } catch (_e) { /* ignore */ }
+    })();
+
     // REL-4 graceful degradation: when the browser can't do fetch or
     // ReadableStream, the form is non-functional but the rest of the
     // playground still works. Surface a clear inline notice.
