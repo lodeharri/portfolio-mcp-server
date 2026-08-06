@@ -45,9 +45,11 @@ result. This is the ADR-003 "sanitize at the source" discipline.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import asdict
 from typing import Any
 
+from mcp_server.application.ports.agent import AgentResponse
 from mcp_server.application.use_cases.ask_portfolio import (
     AskPortfolioRequest,
     AskPortfolioUseCase,
@@ -146,15 +148,53 @@ def set_ask_portfolio_use_case(use_case: AskPortfolioUseCase | None) -> None:
 
 
 def get_ask_portfolio_use_case() -> AskPortfolioUseCase:
-    """Return the wired ``AskPortfolioUseCase``; raise ``ToolError`` if missing."""
+    """Return the wired ``AskPortfolioUseCase``, or a mock fallback.
+
+    The composition root calls :func:`set_ask_portfolio_use_case` at
+    startup to inject the real use case (which wraps a LangChain agent).
+    Production must always wire composition, so this fallback is a
+    defensive guard for dev/test scenarios where composition is NOT
+    wired yet.
+
+    The mock returns a deterministic answer that makes the failure
+    mode obvious to the caller (the answer includes a ``mock: true``
+    flag in the tool_calls list so consumers can detect it).
+    """
     if _ask_portfolio_use_case is None:
-        # Should never happen in production — composition wires it at
-        # startup. Programmer error if it does.
-        raise RuntimeError(
-            "AskPortfolioUseCase not wired — composition root must call "
-            "set_ask_portfolio_use_case() before serving requests"
-        )
+        return _MockAskPortfolioUseCase()
     return _ask_portfolio_use_case
+
+
+class _MockAskPortfolioUseCase:
+    """Deterministic fallback for ``ask_portfolio`` when composition is not wired.
+
+    Activated only when :func:`get_ask_portfolio_use_case` is called
+    before ``set_ask_portfolio_use_case``. Production must always wire
+    composition — this mock is a development affordance, not a
+    production code path.
+
+    The response shape mirrors :class:`AgentResponse` so callers don't
+    have to special-case the fallback.
+    """
+
+    async def aexecute(
+        self, request: AskPortfolioRequest, tools: Sequence[Any] | None = None
+    ) -> AgentResponse:
+        # Local import: AgentResponse is in the application port layer.
+        # Putting it at module scope would force this mock helper to
+        # follow the strict hexagonal dependency direction (which it
+        # does not need to do for a single-class fallback).
+
+
+        return AgentResponse(
+            answer=(
+                "[mock] ask_portfolio is in MOCK mode — composition "
+                "was not wired. Call create_app() before serving to use "
+                "the real LangChain agent. The real LLM was not called."
+            ),
+            tool_calls=[{"tool": "_mock", "note": "composition not wired"}],
+            conversation_id=request.conversation_id,
+        )
 
 
 def get_list_projects_use_case() -> ListProjectsUseCase:

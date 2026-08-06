@@ -510,9 +510,11 @@ def test_ask_portfolio_tool_reraises_programming_errors() -> None:
         asyncio.run(call())
 
 
-def test_ask_portfolio_tool_raises_when_use_case_not_wired() -> None:
+def test_ask_portfolio_tool_falls_back_to_mock_when_use_case_not_wired() -> None:
     """If the composition root forgot to call ``set_ask_portfolio_use_case()``
-    the wrapper MUST raise a clear runtime error."""
+    the wrapper MUST fall back to a deterministic mock use case so the
+    system degrades gracefully (defense-in-depth for dev/test scenarios).
+    """
     from mcp_server.interfaces.mcp import tools
 
     # Reset to ``None`` to simulate "not wired".
@@ -521,5 +523,6 @@ def test_ask_portfolio_tool_raises_when_use_case_not_wired() -> None:
     async def call() -> Any:
         return await (await tools.mcp.get_tool("ask_portfolio")).fn(question="hi")
 
-    with pytest.raises(RuntimeError, match="AskPortfolioUseCase not wired"):
-        asyncio.run(call())
+    result = asyncio.run(call())
+    assert result["answer"].startswith("[mock]")
+    assert result["tool_calls"] == [{"tool": "_mock", "note": "composition not wired"}]
