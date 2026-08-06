@@ -27,10 +27,14 @@ from typing import Final
 from dotenv import load_dotenv
 from pydantic import BaseModel, ConfigDict, Field
 
-# Load .env file at module import time. Idempotent and silent if .env
-# doesn't exist. This must happen BEFORE any os.environ access below
-# (e.g. in build_info_from_env which runs at module import).
-load_dotenv()
+# Load .env file at module import time — but ONLY outside test runs.
+# During tests we want deterministic behaviour (mock-gemini by default),
+# not the user's local `.env` overwriting test env vars. Pytest sets
+# `pytest` in `sys.modules` long before this module is imported, so the
+# check is reliable.
+import sys
+if "pytest" not in sys.modules:
+    load_dotenv()
 
 # ---------------------------------------------------------------------------
 # Build-time defaults
