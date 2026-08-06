@@ -40,13 +40,13 @@ class TestAgentChunk:
         assert isinstance(AgentChunk(kind="token"), BaseModel)
         assert issubclass(AgentChunk, BaseModel)
 
-    @pytest.mark.parametrize("kind", ["token", "tool_call", "done"])
+    @pytest.mark.parametrize("kind", ["token", "tool_call", "done", "error"])
     def test_accepts_each_documented_kind(self, kind: str) -> None:
         chunk = AgentChunk(kind=kind, data="payload")
         assert chunk.kind == kind
         assert chunk.data == "payload"
 
-    @pytest.mark.parametrize("bad_kind", ["", "error", "TEXT", "token ", "Done"])
+    @pytest.mark.parametrize("bad_kind", ["", "TEXT", "token ", "Done", "fail"])
     def test_rejects_unknown_kind_values(self, bad_kind: str) -> None:
         with pytest.raises(ValidationError):
             AgentChunk(kind=bad_kind, data="x")

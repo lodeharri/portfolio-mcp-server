@@ -21,14 +21,16 @@ class AgentChunk(BaseModel):
 
     ``kind`` is the closed set defined by the agent-streaming spec:
     ``"token"`` for incremental LLM tokens, ``"tool_call"`` for a
-    sibling-tool dispatch, ``"done"`` for the terminal sentinel.
+    sibling-tool dispatch, ``"done"`` for the terminal sentinel, and
+    ``"error"`` for an exception caught mid-stream (REL-3 — the SSE
+    layer translates this to ``data: [ERROR]\\n\\n``).
 
     ``data`` carries the payload: a token string for ``"token"``, a
-    tool-call description for ``"tool_call"``, and an empty string for
-    ``"done"``. The SSE encoder stringifies ``data`` per kind.
+    tool-call description for ``"tool_call"``, an empty string for
+    ``"done"``, and the stringified exception for ``"error"``.
     """
 
-    kind: Literal["token", "tool_call", "done"]
+    kind: Literal["token", "tool_call", "done", "error"]
     data: str | dict[str, Any] = ""
 
 
