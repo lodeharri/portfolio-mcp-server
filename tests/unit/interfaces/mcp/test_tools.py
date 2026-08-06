@@ -384,3 +384,142 @@ def test_file_reader_domain_errors_are_translated() -> None:
 
     with pytest.raises(ToolError):
         asyncio.run(call())
+
+
+# ---------------------------------------------------------------------------
+# ask_portfolio wrapper (PR3 of 002-mcp-tools)
+# ---------------------------------------------------------------------------
+
+
+class _FakeAskPortfolioUseCase:
+    """In-memory fake for the ``AskPortfolioUseCase`` wrapper tests."""
+
+    def __init__(self, result: Any | None = None, raise_exc: Exception | None = None):
+        self.result = result
+        self.raise_exc = raise_exc
+        self.calls: list[Any] = []
+
+    async def aexecute(self, request: Any) -> Any:
+        self.calls.append(request)
+        if self.raise_exc is not None:
+            raise self.raise_exc
+        return self.result
+
+
+def test_ask_portfolio_tool_is_registered() -> None:
+    from mcp_server.interfaces.mcp.server import mcp
+
+    names = asyncio.run(_registered_tool_names(mcp))
+    assert "ask_portfolio" in names
+
+
+def test_ask_portfolio_tool_forwards_request_to_use_case() -> None:
+    """The wrapper builds an ``AskPortfolioRequest`` from the kwargs
+    and awaits ``use_case.aexecute(...)``."""
+    from mcp_server.interfaces.mcp import tools
+    from mcp_server.application.use_cases.ask_portfolio import (
+        AskPortfolioRequest,
+        AskPortfolioResult,
+    )
+
+    fake = _FakeAskPortfolioUseCase(
+        result=AskPortfolioResult(
+            answer="mock", tools_called=["list_projects_tool"], conversation_id=None
+        )
+    )
+    tools.set_ask_portfolio_use_case(fake)  # type: ignore[arg-type]
+
+    async def call() -> Any:
+        return await (await tools.mcp.get_tool("ask_portfolio")).fn(
+            question="list them",
+            conversation_id="c1",
+        )
+
+    payload = asyncio.run(call())
+
+    # The wrapper passed the question + conversation_id to the use case.
+    assert len(fake.calls) == 1
+    request = fake.calls[0]
+    assert isinstance(request, AskPortfolioRequest)
+    assert request.question == "list them"
+    assert request.conversation_id == "c1"
+    # The wrapper returned the use case result dict.
+    assert payload == {
+        "answer": "mock",
+        "tools_called": ["list_projects_tool"],
+        "conversation_id": None,
+    }
+
+
+def test_ask_portfolio_tool_translates_value_error_to_tool_error() -> None:
+    """Empty question raises ``ValueError`` → wrapper maps to ``ToolError``."""
+    from fastmcp.exceptions import ToolError
+
+    from mcp_server.interfaces.mcp import tools
+
+    fake = _FakeAskPortfolioUseCase(
+        raise_exc=ValueError("question must be a non-empty, non-whitespace string")
+    )
+    tools.set_ask_portfolio_use_case(fake)  # type: ignore[arg-type]
+
+    async def call() -> Any:
+        return await (await tools.mcp.get_tool("ask_portfolio")).fn(question="")
+
+    with pytest.raises(ToolError) as exc_info:
+        asyncio.run(call())
+    # Authored message — no SDK text leaks.
+    assert "non-empty" in str(exc_info.value)
+
+
+def test_ask_portfolio_tool_translates_rate_limit_exceeded() -> None:
+    """``RateLimitExceeded`` (domain) → ``ToolError`` with authored message."""
+    from fastmcp.exceptions import ToolError
+
+    from mcp_server.domain.exceptions import RateLimitExceeded
+    from mcp_server.interfaces.mcp import tools
+
+    fake = _FakeAskPortfolioUseCase(
+        raise_exc=RateLimitExceeded("ip=10.0.0.1 counter=31/30")
+    )
+    tools.set_ask_portfolio_use_case(fake)  # type: ignore[arg-type]
+
+    async def call() -> Any:
+        return await (await tools.mcp.get_tool("ask_portfolio")).fn(question="hi")
+
+    with pytest.raises(ToolError) as exc_info:
+        asyncio.run(call())
+    # Authored message — no raw ip/counter leak.
+    assert "10.0.0.1" not in str(exc_info.value)
+    assert "31/30" not in str(exc_info.value)
+    assert "rate limit" in str(exc_info.value).lower()
+
+
+def test_ask_portfolio_tool_reraises_programming_errors() -> None:
+    """``TypeError`` from the use case MUST NOT be caught by the wrapper."""
+    from mcp_server.interfaces.mcp import tools
+
+    fake = _FakeAskPortfolioUseCase(
+        raise_exc=TypeError("'NoneType' has no attribute 'x'")
+    )
+    tools.set_ask_portfolio_use_case(fake)  # type: ignore[arg-type]
+
+    async def call() -> Any:
+        return await (await tools.mcp.get_tool("ask_portfolio")).fn(question="hi")
+
+    with pytest.raises(TypeError):
+        asyncio.run(call())
+
+
+def test_ask_portfolio_tool_raises_when_use_case_not_wired() -> None:
+    """If the composition root forgot to call ``set_ask_portfolio_use_case()``
+    the wrapper MUST raise a clear runtime error."""
+    from mcp_server.interfaces.mcp import tools
+
+    # Reset to ``None`` to simulate "not wired".
+    tools.set_ask_portfolio_use_case(None)
+
+    async def call() -> Any:
+        return await (await tools.mcp.get_tool("ask_portfolio")).fn(question="hi")
+
+    with pytest.raises(RuntimeError, match="AskPortfolioUseCase not wired"):
+        asyncio.run(call())
