@@ -1,12 +1,24 @@
-"""LangChain adapters for chunking and agent orchestration."""
+"""LangChain adapters for chunking, agent orchestration, and embedding.
+
+This is the SINGLE module that wires LangChain / LangGraph into the
+project. Per the 005-langchain-integration architecture decision,
+chunking + agent + embedding live together here so the LangChain
+surface area is small, discoverable, and replaceable in one place.
+
+Hexagonal note: the application ports (``EmbeddingPort``, ``AgentPort``,
+``ChunkingPort``) are NOT imported here — LangChain adapters are
+structural Protocol matches, no inheritance. Composition root wires
+them in.
+"""
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from langchain_text_splitters import (
     MarkdownTextSplitter,
     PythonCodeTextSplitter,
@@ -104,3 +116,97 @@ def create_langchain_agent(
     if not api_key.strip():
         return _MockLangChainAgentAdapter()
     return LangChainAgentAdapter(api_key=api_key, model=model)
+
+
+class LangChainEmbeddingAdapter:
+    """EmbeddingPort implementation backed by LangChain's Google Gemini embeddings.
+
+    The adapter delegates to ``langchain_google_genai.GoogleGenerativeAIEmbeddings``
+    which wraps the new ``google-genai`` SDK under the hood. Batching is
+    handled by the LangChain class itself (its ``embed_documents`` accepts
+    a ``list[str]`` and slices into <=100-text batches automatically).
+
+    Args:
+        api_key: Google Gemini API key. Empty string raises ``ValueError``
+            from the LangChain pydantic model validation — callers should
+            use :func:`create_langchain_embedding` to opt into the mock.
+        model: Gemini embedding model identifier. Default
+            ``"text-embedding-004"`` (768-dim, free tier).
+        embedding_dim: Declared output dimension. The LangChain client
+            doesn't surface this directly, so we cache it as an
+            attribute that :class:`IndexProjectUseCase` reads via
+            ``getattr(adapter, "embedding_dim", 768)``.
+    """
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "text-embedding-004",
+        embedding_dim: int = 768,
+    ) -> None:
+        self._embeddings = GoogleGenerativeAIEmbeddings(
+            model=model,
+            google_api_key=api_key,
+        )
+        self.embedding_dim = embedding_dim
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        """Embed a batch of texts via LangChain's ``embed_documents``.
+
+        One round-trip per call (LangChain batches up to 100 texts
+        internally). Order is preserved: ``result[i]`` corresponds to
+        ``texts[i]``.
+        """
+        return self._embeddings.embed_documents(texts)
+
+
+class _MockLangChainEmbeddingAdapter:
+    """Deterministic EmbeddingPort mock backed by SHA-256 of the input text.
+
+    Per the 005-langchain-integration spec the mock variant lives next
+    to its real sibling in this single file. Each 4-byte chunk of the
+    SHA-256 digest becomes a float in ``[0, 1]`` via ``v / 2**32``.
+    Same input → same vector across processes (no SDK, no network).
+
+    Used by ``--mock-gemini`` and tests that need a real ``EmbeddingPort``
+    instance without standing up the LangChain client.
+    """
+
+    def __init__(self, embedding_dim: int = 768) -> None:
+        self.embedding_dim = embedding_dim
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        """Return ``embedding_dim``-float deterministic vectors for each text.
+
+        SHA-256 returns 32 bytes; for ``embedding_dim * 4`` bytes we
+        tile the digest until we have enough material, then truncate.
+        """
+        return [self._vector_for(text) for text in texts]
+
+    def _vector_for(self, text: str) -> list[float]:
+        needed_bytes = self.embedding_dim * 4
+        digest = hashlib.sha256(text.encode("utf-8")).digest()
+        # Tile the digest (32 bytes) until we have enough material,
+        # then truncate. SHA-256 has uniform distribution so tiling
+        # is safe for deterministic-vector generation.
+        buf = digest * (needed_bytes // len(digest) + 1)
+        buf = buf[:needed_bytes]
+        ints = [int.from_bytes(buf[i : i + 4], "big") for i in range(0, len(buf), 4)]
+        return [(v / 2**32) for v in ints[: self.embedding_dim]]
+
+
+def create_langchain_embedding(
+    api_key: str = "",
+    model: str = "text-embedding-004",
+    embedding_dim: int = 768,
+) -> LangChainEmbeddingAdapter | _MockLangChainEmbeddingAdapter:
+    """Create the LangChain embedding adapter. Mock when ``api_key`` is empty.
+
+    Mirrors :func:`create_langchain_agent`: an empty/whitespace API key
+    flips the factory to the deterministic mock variant so the build
+    always succeeds (auto-fallback at the CLI, ``--mock-gemini`` mode,
+    tests without a network).
+    """
+    if not api_key.strip():
+        return _MockLangChainEmbeddingAdapter(embedding_dim=embedding_dim)
+    return LangChainEmbeddingAdapter(api_key=api_key, model=model, embedding_dim=embedding_dim)

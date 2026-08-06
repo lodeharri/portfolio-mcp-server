@@ -48,10 +48,6 @@ from mcp_server.domain.exceptions import (
     ManifestError,
     PreindexExitCode,
 )
-from mcp_server.infrastructure.adapters.gemini_embedding import (
-    GeminiEmbeddingAdapter,
-    MockEmbeddingAdapter,
-)
 from mcp_server.infrastructure.adapters.gemini_llm import (
     GeminiLlmAdapter,
     MockLlmAdapter,
@@ -62,6 +58,7 @@ from mcp_server.infrastructure.db.connection import open_db
 from mcp_server.infrastructure.langchain import (
     create_langchain_adapter,
     create_langchain_agent,
+    create_langchain_embedding,
 )
 from mcp_server.security.audit import AuditLogger
 from mcp_server.security.gitleaks_scanner import GitleaksScanner
@@ -167,14 +164,23 @@ def create_composition(
     vector_store = SqliteVecStore(conn)
 
     # PR3: embedding + LLM adapter pair (mock or real).
+    # Per 005-langchain-integration: embedding is delegated to the
+    # LangChain adapter (``create_langchain_embedding``) so chunking,
+    # agent, and embedding all share the same single wiring file. The
+    # LLM adapter stays on the standalone ``google-genai`` SDK
+    # (``GeminiLlmAdapter``) because LangChain's chat model is only
+    # used inside the ReAct agent — the standalone chat API is
+    # smaller and avoids an extra layer for the per-tool LLM calls.
     if use_mock_gemini is None:
         use_mock_gemini = not bool((config.gemini_api_key or "").strip())
+    api_key = config.gemini_api_key or ""
+    embedding = create_langchain_embedding(
+        api_key="" if use_mock_gemini else api_key,
+        embedding_dim=config.embedding_dim,
+    )
     if use_mock_gemini:
-        embedding = MockEmbeddingAdapter(embedding_dim=config.embedding_dim)
         llm: LLMPort | None = MockLlmAdapter()
     else:
-        api_key = config.gemini_api_key or ""
-        embedding = GeminiEmbeddingAdapter(api_key=api_key)
         llm = GeminiLlmAdapter(api_key=api_key)
 
     # PR3: preindex use case.
