@@ -116,6 +116,9 @@ class Project(BaseModel):
     description: str = ""
     include_subdirs: list[str] = Field(default_factory=list)
     exclude_subdirs: list[str] = Field(default_factory=list)
+    adr_path: str | None = None
+    readme_path: str | None = None
+    diagram_path: str | None = None
 
 
 # ---------------------------------------------------------------------------

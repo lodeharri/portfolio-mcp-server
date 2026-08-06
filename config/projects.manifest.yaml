@@ -77,6 +77,8 @@ projects:
       - .aws
     adr_path: openspec/changes/initial-poc/design.md
     readme_path: README.md
+    diagram_path: docs/architecture.svg
+
 
   - id: landing-page-portfolio
     path: /home/harri/development/projects/portfolio/landing-page-portfolio
@@ -92,3 +94,4 @@ projects:
       - dist
     adr_path: docs/adr
     readme_path: README.md
+    diagram_path: docs/architecture.svg

@@ -67,9 +67,8 @@ class _IndexingConfig(BaseModel):
 class _RawProject(BaseModel):
     """Per-project entry in the on-disk YAML.
 
-    Extra fields (``adr_path``, ``readme_path``) are tolerated because
-    the application-layer :class:`Project` strips them. They are not
-    used by PR2 but kept on disk for documentation.
+    Extra fields (``adr_path``, ``readme_path``, ``diagram_path``) are
+    preserved as declared file-reader metadata.
     """
 
     id: str
@@ -78,6 +77,9 @@ class _RawProject(BaseModel):
     description: str = ""
     include_subdirs: list[str] = Field(default_factory=list)
     exclude_subdirs: list[str] = Field(default_factory=list)
+    adr_path: str | None = None
+    readme_path: str | None = None
+    diagram_path: str | None = None
 
 
 class _RawManifest(BaseModel):
@@ -188,6 +190,9 @@ class YamlManifestAdapter:
                     description=p.description,
                     include_subdirs=list(p.include_subdirs),
                     exclude_subdirs=list(p.exclude_subdirs),
+                    adr_path=p.adr_path,
+                    readme_path=p.readme_path,
+                    diagram_path=p.diagram_path,
                 )
                 for p in raw.projects
             ],

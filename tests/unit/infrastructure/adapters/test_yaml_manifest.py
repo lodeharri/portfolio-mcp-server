@@ -68,6 +68,9 @@ def _default_manifest_body(project_root: Path) -> str:
               - backend
             exclude_subdirs:
               - .git
+            adr_path: docs/adr
+            readme_path: README.md
+            diagram_path: docs/architecture.svg
         """
 
 
@@ -133,6 +136,9 @@ class TestYamlManifestAdapterLoad:
         assert project.path == project_root
         assert "src" in project.include_subdirs
         assert ".git" in project.exclude_subdirs
+        assert project.adr_path == "docs/adr"
+        assert project.readme_path == "README.md"
+        assert project.diagram_path == "docs/architecture.svg"
 
 
 # ---------------------------------------------------------------------------
