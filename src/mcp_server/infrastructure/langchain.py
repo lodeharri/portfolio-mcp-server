@@ -99,8 +99,20 @@ class LangChainAgentAdapter:
         model: str = "gemini-2.0-flash",
         *,
         llm: Any | None = None,
+        max_output_tokens: int = 600,
     ) -> None:
-        self._llm = llm or ChatGoogleGenerativeAI(model=model, api_key=api_key)
+        # ``max_output_tokens=600`` is the 003-playground-ui
+        # llm-prompt-discipline cap (Decision #12 — short-first
+        # invariant). The spec's original Pydantic AI field
+        # ``UsageLimits.response_tokens_limit`` no longer applies after
+        # 005-langchain-integration migrated to LangGraph; the
+        # LangChain-native equivalent is the field on the chat model
+        # itself. REL-8 finding from PR1's reliability review.
+        self._llm = llm or ChatGoogleGenerativeAI(
+            model=model,
+            api_key=api_key,
+            max_output_tokens=max_output_tokens,
+        )
 
     async def run(self, request: AgentRequest, tools: Sequence[Any]) -> AgentResponse:
         tool_functions = [getattr(tool, "fn", tool) for tool in tools]
