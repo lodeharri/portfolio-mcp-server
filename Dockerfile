@@ -99,20 +99,34 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     && rm -rf /opt/venv/bin/pip* \
     && rm -rf /opt/venv/lib/python3.10/site-packages/_distutils_hack 2>/dev/null || true
 
-# Pre-bake a schema-only vector index. The build context does NOT
-# include the sibling project trees (absolute paths in the manifest
-# pointing outside the build context), so the baked index is always
-# empty — the runtime server populates it with real embeddings via a
-# mounted volume (Fly.io) or persistent disk (HF Spaces). See spec
-# scenario "Build without GEMINI_API_KEY still succeeds".
+# Bake the vector index. Two paths:
 #
-# We use a small helper script (scripts/bake_schema.py) instead of
-# running `preindex` directly because (a) preindex requires the project
-# trees mounted at build time which we don't have, and (b) the script
-# is faster and only creates the schema.
+# 1) Pre-populated DB in the build context (recruiter-demo path): if
+#    `data/index.sqlite` exists locally with real Gemini embeddings
+#    (typically produced by running `preindex` on the host against
+#    the sibling project trees with a real `GEMINI_API_KEY`), COPY it
+#    directly. The image ships with the populated index and the
+#    runtime server boots with real chunks available to
+#    `search_code`, `ask_portfolio`, etc.
+#
+# 2) No pre-populated DB (CI / fresh checkout path): fall back to
+#    `scripts/bake_schema.py` which creates the schema-only DB. The
+#    runtime boots with an empty vector store; tools that depend on
+#    the index return empty results until someone runs `preindex`
+#    inside the running container or against a mounted volume.
+#
+# The BuildKit `--mount=type=secret` from the old design is no longer
+# needed because we don't compute embeddings at build time — either
+# the index is committed/committed-as-artifact, or it isn't.
+COPY data/ /tmp/host-data/
 RUN mkdir -p /build/data
-RUN --mount=type=secret,id=gemini \
-    /opt/venv/bin/python /build/scripts/bake_schema.py /build/data/index.sqlite
+RUN if [ -f /tmp/host-data/index.sqlite ]; then \
+      cp /tmp/host-data/index.sqlite /build/data/index.sqlite && \
+      echo "Baked pre-populated index.sqlite ($(stat -c%s /build/data/index.sqlite) bytes)"; \
+    else \
+      echo "No data/index.sqlite in build context — falling back to empty schema"; \
+      /opt/venv/bin/python /build/scripts/bake_schema.py /build/data/index.sqlite; \
+    fi
 
 # ---------- Stage 2: runtime ----------
 FROM python:3.10.12-slim AS runtime

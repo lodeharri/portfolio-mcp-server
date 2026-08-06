@@ -103,7 +103,7 @@ class TestLangChainEmbeddingAdapter:
                 # One 4-float vector per input text — tiny for the test.
                 return [[0.1, 0.2, 0.3, 0.4] for _ in texts]
 
-        def fake_google_embeddings(*, model: str, google_api_key: str) -> Any:
+        def fake_google_embeddings(*, model: str, google_api_key: str, **kwargs: Any) -> Any:
             captured["model"] = model
             captured["api_key"] = google_api_key
             return FakeLangChainEmbeddings()
@@ -117,7 +117,7 @@ class TestLangChainEmbeddingAdapter:
 
         result = adapter.embed(["alpha", "beta"])
 
-        assert captured["model"] == "text-embedding-004"
+        assert captured["model"] == "gemini-embedding-001"
         assert captured["api_key"] == "dummy-key"
         assert captured["texts"] == ["alpha", "beta"]
         assert result == [[0.1, 0.2, 0.3, 0.4], [0.1, 0.2, 0.3, 0.4]]

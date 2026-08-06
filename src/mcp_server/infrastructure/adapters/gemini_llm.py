@@ -49,7 +49,7 @@ __all__ = [
 MAX_ATTEMPTS: Final[int] = 3
 BASE_DELAY: Final[float] = 1.0
 MAX_DELAY: Final[float] = 30.0
-DEFAULT_MODEL: Final[str] = "gemini-2.0-flash"
+DEFAULT_MODEL: Final[str] = "gemini-flash-latest"
 
 
 # ---------------------------------------------------------------------------
@@ -104,7 +104,7 @@ class GeminiLlmAdapter:
 
     Args:
         api_key: Gemini API key.
-        model: Gemini chat model. Default ``"gemini-2.0-flash"``.
+        model: Gemini chat model. Default ``"gemini-flash-latest"``.
         client_factory: Pluggable client builder; tests override this
             to inject a fake transport.
         clock: Pluggable sleep source.

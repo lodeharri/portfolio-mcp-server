@@ -1,16 +1,16 @@
 {% extends "base.html" %}
 
-{% block title %}MCP Playground — Form Tools{% endblock %}
+{% block title %}MCP Server — Portfolio Tools Explorer{% endblock %}
 
 {% block content %}
-<h1>Form Tools</h1>
-<p>
-    Each card submits to its dedicated
-    <code>POST&nbsp;/playground/api/{tool_name}</code> endpoint and the
-    response is HTMX-swapped into the per-card result div below the
-    form. With JavaScript disabled, the same endpoints accept native
-    form posts and return the same HTML fragment.
-</p>
+<header class="explorer-hero">
+    <h1>Try the MCP server</h1>
+    <p class="hero-lede">
+        Six tools that expose <strong>Harrison Rodriguez's portfolio</strong> — project metadata,
+        semantic code search, architecture summaries, README digest, architecture diagrams, and a
+        free-form agent. Each card below calls one tool directly; results render inline.
+    </p>
+</header>
 
 <section class="playground-form-card">
     <h2>list_projects</h2>
@@ -102,6 +102,25 @@
         <button type="submit">Render diagram</button>
     </form>
     <div id="result-get_architecture_diagram" class="result" role="status"></div>
+</section>
+
+<section class="playground-form-card playground-form-card--cta">
+    <h2>ask_portfolio <span class="badge badge-stream">streaming</span></h2>
+    <p>
+        Free-form question routed through a LangChain ReAct agent that calls the other five
+        tools as needed. The agent streams tokens via SSE in the dedicated
+        <a href="/chat"><strong>Chat tab</strong></a>.
+    </p>
+    <form id="ask-portfolio-form" hx-on::after-request="window.location='/chat?prefill=' + encodeURIComponent(this.querySelector('[name=question]').value)">
+        <label for="ask_portfolio-question">question</label>
+        <input type="text"
+               id="ask_portfolio-question"
+               name="question"
+               required
+               placeholder="What backend stack does finance-coach-latam use?">
+        <button type="submit">Ask &rarr;</button>
+    </form>
+    <p class="hint">Opens /chat with your question pre-filled. The agent will pick the right tools to answer.</p>
 </section>
 
 {% if projects %}

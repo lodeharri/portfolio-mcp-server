@@ -58,12 +58,12 @@ def test_langchain_adapter_passes_max_output_tokens_600(monkeypatch: pytest.Monk
     kwargs = capture.calls[0]
     assert kwargs["max_output_tokens"] == 600
     # Sanity: the model + api_key are also passed (no regression).
-    assert kwargs["model"] == "gemini-2.0-flash"
+    assert kwargs["model"] == "gemini-flash-latest"
     assert kwargs["api_key"] == "dummy-key"
 
 
 def test_langchain_adapter_uses_spec_model_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Default model MUST be ``gemini-2.0-flash`` (matches ``composition.py:AGENT_MODEL_NAME``)."""
+    """Default model MUST match ``gemini-flash-latest`` (composition.py AGENT_MODEL_NAME)."""
     capture = _CaptureGoogleGenerativeAI()
     monkeypatch.setattr(
         "mcp_server.infrastructure.langchain.ChatGoogleGenerativeAI",
@@ -72,7 +72,7 @@ def test_langchain_adapter_uses_spec_model_by_default(monkeypatch: pytest.Monkey
 
     LangChainAgentAdapter(api_key="dummy")
 
-    assert capture.calls[0]["model"] == "gemini-2.0-flash"
+    assert capture.calls[0]["model"] == "gemini-flash-latest"
 
 
 def test_langchain_adapter_preserves_explicit_model(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -119,7 +119,7 @@ def test_factory_picks_real_adapter_for_non_empty_key(monkeypatch: pytest.Monkey
         create_langchain_agent,
     )
 
-    adapter = create_langchain_agent(api_key="dummy", model="gemini-2.0-flash")
+    adapter = create_langchain_agent(api_key="dummy", model="gemini-flash-latest")
 
     assert not isinstance(adapter, _MockLangChainAgentAdapter), (
         "create_langchain_agent must NOT return the mock adapter when api_key is non-empty"

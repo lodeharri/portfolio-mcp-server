@@ -25,6 +25,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from mcp_server.interfaces.http.web.chat import build_chat_router
+from mcp_server.interfaces.http.web.paths import resolve_playground_subdir
 from mcp_server.interfaces.http.web.playground import register_playground_routes
 from mcp_server.interfaces.http.web.templates import templates
 
@@ -34,14 +36,13 @@ __all__ = ["build_web_router"]
 def _static_dir() -> Path:
     """Return the absolute playground/static/ directory.
 
-    Walks up from this file's location to the repo root (parent of
-    ``src/``), then into ``playground/static/``. Works for editable
-    installs and for the Docker image whose layout is
-    ``/app/playground/...``.
+    Delegates to :func:`resolve_playground_subdir` which handles
+    source-tree walks (editable installs), the Docker WORKDIR layout
+    (``/app/playground/``), and the ``MCP_SERVER_PLAYGROUND_DIR`` env
+    var override. Raises :class:`FileNotFoundError` with every
+    attempted path if none resolve.
     """
-    # parents[5] = repo root (../src/mcp_server/interfaces/http/web/router.py
-    # is 5 deep into the repo).
-    return Path(__file__).resolve().parents[5] / "playground" / "static"
+    return resolve_playground_subdir("static")
 
 
 class _StaticFilesWithCacheControl(StaticFiles):
@@ -142,6 +143,13 @@ def build_web_router() -> APIRouter:
     # live in the playground module — register them against this
     # router so the prefix sits at the same place.
     register_playground_routes(router)
+
+    # PR2b — streaming chat surface (stateful browser, stateless
+    # server). ``build_chat_router`` returns its own APIRouter so the
+    # chat surface is self-contained; mounting it here makes
+    # ``GET /chat`` and ``POST /chat/stream`` part of the same web
+    # surface as the playground forms.
+    router.include_router(build_chat_router())
 
     # Mount ``/static/`` last so all routes above resolve first.
     router.mount("/static", _static_files(), name="static")

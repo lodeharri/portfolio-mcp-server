@@ -260,3 +260,101 @@ footer.playground-footer {
     color: var(--playground-muted);
     font-size: 0.875rem;
 }
+
+/* --- MCP Explorer hero (playground.html top section) --- */
+
+.explorer-hero {
+    margin: 0 0 2rem;
+    padding: 1.25rem 1.5rem;
+    background: linear-gradient(
+        135deg,
+        var(--solar-base2) 0%,
+        var(--playground-card-bg) 100%
+    );
+    border: 1px solid var(--playground-card-border);
+    border-left: 4px solid var(--solar-blue);
+    border-radius: 6px;
+}
+
+.explorer-hero h1 {
+    margin: 0 0 0.5rem;
+    color: var(--solar-base02);
+    font-size: 1.875rem;
+}
+
+.explorer-hero .hero-lede {
+    margin: 0;
+    color: var(--solar-base01);
+    font-size: 0.9375rem;
+    max-width: 48rem;
+}
+
+.explorer-hero strong {
+    color: var(--solar-base02);
+}
+
+/* --- CTA card variant (ask_portfolio: links to /chat) --- */
+
+section.playground-form-card--cta {
+    border-left: 4px solid var(--solar-cyan);
+    background: linear-gradient(
+        180deg,
+        var(--playground-card-bg) 0%,
+        var(--solar-base2) 100%
+    );
+}
+
+section.playground-form-card--cta h2 {
+    color: var(--solar-cyan);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+/* --- Inline badges --- */
+
+.badge {
+    display: inline-block;
+    padding: 0.125rem 0.5rem;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-radius: 3px;
+    vertical-align: middle;
+}
+
+.badge-stream {
+    background-color: var(--solar-cyan);
+    color: var(--solar-base03);
+}
+
+/* --- Hint text under forms --- */
+
+section.playground-form-card .hint {
+    margin: 0.5rem 0 0;
+    color: var(--solar-base01);
+    font-size: 0.8125rem;
+    font-style: italic;
+}
+
+section.playground-form-card .hint code {
+    background-color: var(--solar-base2);
+    padding: 0.05rem 0.3rem;
+    border-radius: 2px;
+    font-style: normal;
+}
+
+/* --- Visually hidden (a11y) --- */
+
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
