@@ -68,7 +68,7 @@ class TestManifestScopedIndexingIntegration:
 
     def test_unrelated_path_is_not_indexed(self, manifest_adapter: YamlManifestAdapter) -> None:
         # A path clearly outside any declared project is denied.
-        unrelated = Path("/tmp/some-other-project/src/main.py")  # noqa: S108
+        unrelated = Path("/tmp/some-other-project/src/main.py")
         assert manifest_adapter.is_path_indexed(unrelated) is False
 
     def test_path_traversal_is_not_indexed(self, manifest_adapter: YamlManifestAdapter) -> None:

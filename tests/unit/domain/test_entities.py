@@ -125,7 +125,9 @@ class TestCodeChunkContract:
             content="x = 1",
             embedding=[0.0] * 768,
         )
-        with pytest.raises((ValidationError, dataclasses.FrozenInstanceError, AttributeError, TypeError)):
+        with pytest.raises(
+            (ValidationError, dataclasses.FrozenInstanceError, AttributeError, TypeError),
+        ):
             chunk.flagged = True  # type: ignore[misc]
 
     def test_code_chunk_chunk_hash_validation_accepts_64_hex(self) -> None:

@@ -169,7 +169,7 @@ class TestCompositionManifestLoadedEndToEnd:
         # Force the manifest to load (lazy).
         comp.manifest.load()
         # A path clearly outside any declared project returns False.
-        unrelated = Path("/tmp/this-path-does-not-exist-anywhere.py")  # noqa: S108
+        unrelated = Path("/tmp/this-path-does-not-exist-anywhere.py")
         assert comp.manifest.is_path_indexed(unrelated) is False
 
 

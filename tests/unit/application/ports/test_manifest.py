@@ -51,7 +51,7 @@ class TestManifestModels:
             projects=[
                 Project(
                     id="finance-coach-latam",
-                    path=Path("/tmp/finance"),  # noqa: S108
+                    path=Path("/tmp/finance"),
                     display_name="Finance",
                     description="test",
                     include_subdirs=["backend"],
@@ -63,7 +63,7 @@ class TestManifestModels:
         restored = Manifest(**dumped)
         assert restored.server_name == "portfolio-mcp-server"
         assert restored.projects[0].id == "finance-coach-latam"
-        assert restored.projects[0].path == Path("/tmp/finance")  # noqa: S108
+        assert restored.projects[0].path == Path("/tmp/finance")
 
 
 class TestManifestPortProtocol:
@@ -114,7 +114,7 @@ class TestManifestPortConformance:
                     projects=[
                         Project(
                             id="p",
-                            path=Path("/tmp/p"),  # noqa: S108
+                            path=Path("/tmp/p"),
                             display_name="P",
                             description="",
                             include_subdirs=["src"],

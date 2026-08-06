@@ -20,6 +20,8 @@ import struct
 
 import pytest
 
+from mcp_server.domain.entities import CodeChunk
+
 
 def _pack(vec: list[float]) -> bytes:
     """Pack a list of floats into the sqlite-vec binary blob."""
@@ -38,8 +40,6 @@ def _make_chunk(
     embedding_dim: int = 768,
     flagged: bool = False,
 ) -> CodeChunk:
-    from mcp_server.domain.entities import CodeChunk
-
     return CodeChunk(
         chunk_hash=chunk_hash,
         project_id=project_id,
