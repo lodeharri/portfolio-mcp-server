@@ -98,6 +98,32 @@ class TestCompositionWiredAdaptersContract:
         # 002-mcp-tools PR1: real instance, no longer a ``None`` placeholder.
         assert isinstance(comp.list_projects_use_case, ListProjectsUseCase)
 
+    def test_ask_portfolio_use_case_is_real(self) -> None:
+        """002-mcp-tools PR3: ``ask_portfolio_use_case`` MUST be wired.
+
+        The Pydantic AI agent is built inside ``create_composition`` and
+        injected into the ``AskPortfolioUseCase``. Without this wiring
+        the ``ask_portfolio`` MCP tool would fall through to a
+        not-wired ``RuntimeError``.
+        """
+        from mcp_server.application.use_cases.ask_portfolio import AskPortfolioUseCase
+
+        comp = create_composition(AppConfig())
+        assert isinstance(comp.ask_portfolio_use_case, AskPortfolioUseCase)
+
+    def test_ask_portfolio_use_case_receives_rate_limiter(self) -> None:
+        """Layer 5 application-layer rate limiter is wired into the use case.
+
+        The use case MUST call ``rate_limiter.check(client_ip)`` on
+        every invocation; the wiring is the composition root's
+        responsibility (ADR-001).
+        """
+        from mcp_server.application.ports.rate_limiter import RateLimiterPort
+
+        comp = create_composition(AppConfig())
+        assert isinstance(comp.ask_portfolio_use_case.rate_limiter, RateLimiterPort)
+        assert comp.ask_portfolio_use_case.rate_limiter is comp.rate_limiter
+
 
 class TestCompositionIsFrozen:
     """The composition root is frozen (no mid-request mutation)."""

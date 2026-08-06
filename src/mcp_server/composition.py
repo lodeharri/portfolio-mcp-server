@@ -34,6 +34,7 @@ from mcp_server.application.ports.manifest import ManifestPort
 from mcp_server.application.ports.rate_limiter import RateLimiterPort
 from mcp_server.application.ports.secret_scanner import SecretScannerPort
 from mcp_server.application.ports.vector_store import VectorStorePort
+from mcp_server.application.use_cases.ask_portfolio import AskPortfolioUseCase
 from mcp_server.application.use_cases.explain_architecture import ExplainArchitectureUseCase
 from mcp_server.application.use_cases.get_architecture_diagram import (
     GetArchitectureDiagramUseCase,
@@ -105,6 +106,7 @@ class Composition:
     explain_architecture_use_case: ExplainArchitectureUseCase
     summarize_readme_use_case: SummarizeReadmeUseCase
     get_architecture_diagram_use_case: GetArchitectureDiagramUseCase
+    ask_portfolio_use_case: "AskPortfolioUseCase | None" = None
 
 
 def create_composition(
@@ -227,6 +229,36 @@ def create_composition(
         get_architecture_diagram_uc=get_architecture_diagram_use_case,
     )
 
+    # 002-mcp-tools PR3: build the Pydantic AI Agent with the 5 sibling
+    # ``@mcp.tool`` functions as function-calling tools (ADR-001 +
+    # design/adrs/001-pydantic-ai-agent-tool-registration.md). The
+    # agent is built ONCE here and shared by the use case (cold start
+    # cost is amortized across requests).
+    #
+    # The lazy import inside ``_build_pydantic_agent`` avoids the
+    # cyclic import between composition.py and interfaces.mcp.tools
+    # (composition wires adapters + use cases; tools imports the use
+    # case types to build their wrappers). Doing it inside the function
+    # body — not at module-load time — breaks the cycle.
+    agent = _build_pydantic_agent(
+        tool_funcs=[
+            _tools.list_projects_tool,
+            _tools.search_code_tool,
+            _tools.explain_architecture_tool,
+            _tools.summarize_readme_tool,
+            _tools.get_architecture_diagram_tool,
+        ],
+        use_mock_gemini=use_mock_gemini,
+        api_key=config.gemini_api_key or "",
+    )
+    ask_portfolio_use_case = AskPortfolioUseCase(
+        agent=agent,
+        sanitizer=sanitizer,
+        audit=audit,
+        rate_limiter=rate_limiter,
+    )
+    _tools.set_ask_portfolio_use_case(ask_portfolio_use_case)
+
     return Composition(
         config=config,
         manifest=manifest,
@@ -243,6 +275,7 @@ def create_composition(
         explain_architecture_use_case=explain_architecture_use_case,
         summarize_readme_use_case=summarize_readme_use_case,
         get_architecture_diagram_use_case=get_architecture_diagram_use_case,
+        ask_portfolio_use_case=ask_portfolio_use_case,
     )
 
 
@@ -257,6 +290,88 @@ def _db_path_override(config: AppConfig) -> Path | None:
     if isinstance(raw, Path):
         return raw
     return None
+
+
+#: Default Gemini chat model for the ask_portfolio Pydantic AI agent.
+#: Matches ``gemini_llm.DEFAULT_MODEL``. Kept here so the composition
+#: root remains the only place where the model string is named
+#: (ADR-001: no scattered configuration).
+AGENT_MODEL_NAME: str = "gemini-2.0-flash"
+
+#: Pydantic AI provider prefix. NOTE: ``google-gla:`` was used in the
+#: 002-mcp-tools design.md (pydantic-ai ≤ 0.x); pydantic-ai 2.x
+#: renamed the provider to ``google:``. We pin the new prefix here
+#: and document the change as a follow-up — the agent still targets
+#: the same Gemini model.
+AGENT_MODEL: str = f"google:{AGENT_MODEL_NAME}"
+
+
+def _build_pydantic_agent(
+    *,
+    tool_funcs: list,
+    use_mock_gemini: bool,
+    api_key: str,
+):
+    """Build the Pydantic AI ``Agent`` with the 5 sibling tool functions.
+
+    The agent is built ONCE per ``create_composition()`` call and shared
+    across all ``ask_portfolio`` invocations — building it per request
+    would add ~50 ms cold-start tax (ADR-001 follow-up R3).
+
+    Args:
+        tool_funcs: The 5 ``@mcp.tool``-decorated sibling functions.
+            The agent sees each function as a tool named after its
+            Python identifier (``list_projects_tool``,
+            ``search_code_tool``, etc.).
+        use_mock_gemini: When ``True``, build a ``FunctionModel``-
+            backed agent that emits a deterministic mock answer. Used
+            by the test suite and the ``--mock-gemini`` CLI flag
+            (``tests/integration/test_mcp_tools_ask_portfolio.py``
+            drives this path end-to-end).
+        api_key: Gemini API key. Required when ``use_mock_gemini`` is
+            ``False`` — the agent is built against the real Google
+            provider.
+
+    Returns:
+        A configured :class:`pydantic_ai.Agent` instance with
+        ``output_type=str`` and ``max_tool_calls=5`` enforced via
+        ``Agent.run(..., usage_limits=UsageLimits(tool_calls_limit=5))``
+        (the use case applies the limit per call; the agent itself
+        does not carry a hard cap to keep the wiring single-sourced).
+
+    Notes:
+        The lazy import of :mod:`pydantic_ai` keeps the domain layer
+        framework-free (the use case imports it lazily too).
+    """
+    # Lazy import — keeps pydantic_ai out of the module-load graph
+    # for the rest of the composition root.
+    from pydantic_ai import Agent
+    from pydantic_ai.models.function import AgentInfo, FunctionModel
+    from pydantic_ai.messages import ModelResponse, TextPart
+
+    if use_mock_gemini:
+        # Deterministic mock — the spec mandates the literal format
+        # ``[mock answer to: <question>]`` so the e2e test asserts on
+        # a stable contract.
+        def mock_model(messages, info: AgentInfo) -> ModelResponse:
+            return ModelResponse(parts=[TextPart("[mock answer to: hi]")])
+
+        model = FunctionModel(mock_model)
+    else:
+        # Production: build against the real Google provider. The
+        # model string carries the provider prefix per pydantic-ai 2.x.
+        model = AGENT_MODEL
+
+    return Agent(
+        model=model,
+        tools=tool_funcs,
+        output_type=str,
+        retries=2,
+        system_prompt=(
+            "You are an assistant for Harrison Rodriguez's portfolio. "
+            "Use the tools to answer questions about his projects."
+        ),
+    )
 
 
 # Alias matching design.md and tasks.md. ``compose`` reads more naturally

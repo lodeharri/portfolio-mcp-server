@@ -48,6 +48,10 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Any
 
+from mcp_server.application.use_cases.ask_portfolio import (
+    AskPortfolioRequest,
+    AskPortfolioUseCase,
+)
 from mcp_server.application.use_cases.explain_architecture import (
     ExplainArchitectureRequest,
     ExplainArchitectureUseCase,
@@ -67,12 +71,14 @@ from mcp_server.interfaces.mcp.server import mcp
 from mcp_server.interfaces.mcp.tool_errors import translate_tool_error
 
 __all__ = [
+    "ask_portfolio_tool",
     "explain_architecture_tool",
     "get_architecture_diagram_tool",
     "get_list_projects_use_case",
     "get_search_use_case",
     "list_projects_tool",
     "search_code_tool",
+    "set_ask_portfolio_use_case",
     "set_use_cases",
     "summarize_readme_tool",
 ]
@@ -92,6 +98,7 @@ _search_use_case: SearchCodeUseCase | None = None
 _explain_architecture_use_case: ExplainArchitectureUseCase | None = None
 _summarize_readme_use_case: SummarizeReadmeUseCase | None = None
 _get_architecture_diagram_use_case: GetArchitectureDiagramUseCase | None = None
+_ask_portfolio_use_case: AskPortfolioUseCase | None = None
 
 
 def set_use_cases(
@@ -116,6 +123,38 @@ def set_use_cases(
     _explain_architecture_use_case = explain_architecture_uc
     _summarize_readme_use_case = summarize_readme_uc
     _get_architecture_diagram_use_case = get_architecture_diagram_uc
+
+
+def set_ask_portfolio_use_case(use_case: AskPortfolioUseCase | None) -> None:
+    """Populate the ``ask_portfolio`` use case container.
+
+    Separate from :func:`set_use_cases` because the Pydantic AI agent
+    (and therefore the use case) is built AFTER the sibling tool
+    wrappers register their ``@mcp.tool`` decorators — the agent
+    needs the 5 sibling tool functions as function-calling tools.
+    Without this separate setter the composition root would have a
+    chicken-and-egg problem: the agent needs the tool functions, but
+    the tool functions live in this module which is imported by the
+    composition root.
+
+    Called by the composition root at the end of
+    ``create_composition()``. ``None`` is accepted (test isolation —
+    lets a test wipe the container between scenarios).
+    """
+    global _ask_portfolio_use_case
+    _ask_portfolio_use_case = use_case
+
+
+def get_ask_portfolio_use_case() -> AskPortfolioUseCase:
+    """Return the wired ``AskPortfolioUseCase``; raise ``ToolError`` if missing."""
+    if _ask_portfolio_use_case is None:
+        # Should never happen in production — composition wires it at
+        # startup. Programmer error if it does.
+        raise RuntimeError(
+            "AskPortfolioUseCase not wired — composition root must call "
+            "set_ask_portfolio_use_case() before serving requests"
+        )
+    return _ask_portfolio_use_case
 
 
 def get_list_projects_use_case() -> ListProjectsUseCase:
@@ -274,3 +313,53 @@ async def get_architecture_diagram_tool(project_id: str) -> dict[str, Any]:
         return _as_payload(result)
     except (DomainError, ValueError, FileNotFoundError) as exc:
         raise translate_tool_error(exc) from exc
+
+
+# ---------------------------------------------------------------------------
+# ask_portfolio — Pydantic AI agent (PR3 of 002-mcp-tools)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(
+    name="ask_portfolio",
+    description=(
+        "Ask a free-form question about Harrison Rodriguez's portfolio. "
+        "A Pydantic AI agent decides which sibling tools to call "
+        "(list_projects, search_code, explain_architecture, "
+        "summarize_readme, get_architecture_diagram) and synthesizes a "
+        "recruiter-grade answer. Output is sanitized (Layer 3) and the "
+        "call is rate-limited (Layer 5)."
+    ),
+)
+async def ask_portfolio_tool(
+    question: str,
+    conversation_id: str | None = None,
+) -> dict[str, Any]:
+    """Drive the Pydantic AI agent against a recruiter's question.
+
+    Args:
+        question: Natural-language recruiter question. MUST be non-empty
+            after strip (the use case raises :class:`ValueError`).
+        conversation_id: Optional multi-turn handle. Echoed back in the
+            response; not used to drive state in PR3.
+
+    Returns:
+        ``dict[str, Any]`` with keys ``answer`` (sanitized),
+        ``tools_called`` (audit trail), ``conversation_id`` (echoed).
+
+    Raises:
+        ToolError: ``-32602`` invalid params on empty ``question``;
+            ``-32603`` internal error on rate-limit rejection,
+            ``MaxToolCallsExceeded``, or any other domain error.
+    """
+    use_case = get_ask_portfolio_use_case()
+    try:
+        result = await use_case.aexecute(
+            AskPortfolioRequest(
+                question=question,
+                conversation_id=conversation_id,
+            )
+        )
+    except (DomainError, ValueError) as exc:
+        raise translate_tool_error(exc) from exc
+    return _as_payload(result)
