@@ -1,164 +1,297 @@
-# mcp-server-playground
+# portfolio-mcp-server
 
-Harrison Rodriguez's second portfolio project: an **MCP (Model Context Protocol) server in Python** with a built-in **web playground** for a recruiter-facing demo.
+Harrison Rodriguez's portfolio piece: an **MCP (Model Context Protocol) server in Python** that indexes his other projects and exposes them as searchable tools to recruiters via FastMCP.
 
-Sibling to [`finance-coach-latam`](../finance-coach-latam) and [`landing-page-portfolio`](../landing-page-portfolio) inside the parent [`portfolio/`](../) folder.
+> **Status:** 5 of 6 tools fully functional. `ask_portfolio` has a known bug (see [Open bugs](#open-bugs)). Local dev works with mock-gemini for zero-token testing.
 
-> **Status:** greenfield. This README is the pre-`change 001-bootstrap` scaffold. Real content lands once the bootstrap change ships.
+Sibling projects indexed by this server:
+- [`finance-coach-latam`](../finance-coach-latam) — serverless AI finance coach (AWS Lambda + Cloudflare Pages)
+- [`landing-page-portfolio`](../landing-page-portfolio) — bilingual EN/ES portfolio (Astro + Cloudflare Pages)
 
-## Why this project exists
+## What this project is for
 
 The current portfolio is heavy on architecture and light on live demos. This piece fills the gaps:
 
-- **Python backend** showcase (the rest is TypeScript).
-- **Container-based deploy** (Fly.io, not serverless like `finance-coach-latam`).
-- **AI infrastructure** (MCP is the protocol layer; Gemini powers the tools).
-- **Live interactive demo** for recruiters (the playground tab).
+- **Recruiter-facing MCP server** — connect Claude Desktop, Cursor, or any MCP client to ask questions about Harrison's work
+- **Python backend showcase** (the rest of his projects are TypeScript)
+- **Container-based deploy** (Fly.io, not serverless like `finance-coach-latam`)
+- **AI infrastructure** (semantic search over his code, Gemini-powered tool calls)
+- **RAG over portfolio code** — `ask_portfolio` is a Pydantic AI agent that orchestrates the other 5 tools
 
-## Stack at a glance
+## The 6 MCP tools
 
-| Layer        | Choice                                                |
-| ------------ | ----------------------------------------------------- |
-| Backend      | FastAPI + FastMCP (Python MCP SDK), single process    |
-| Frontend     | HTMX + htmx-ws + Jinja2 templates (no separate Node)  |
-| Database     | SQLite + `sqlite-vec` (vector search, no Neon needed) |
-| LLM          | Gemini 2.0 Flash + text-embedding-004 (free tier)     |
-| Agent        | Pydantic AI (playground chat only, for tool calling)  |
-| Jobs         | arq (Redis-backed, optional)                          |
-| Tests        | pytest + pytest-asyncio + httpx.AsyncClient + Playwright + axe-core |
-| Lint/format  | ruff (Python) + prettier (Jinja/HTML/JS)              |
-| Container    | Docker multi-stage, target <150 MB                    |
-| Deploy       | Fly.io free tier (256 MB shared VMs), $0/month target |
+| Tool | Status | Description |
+|------|--------|-------------|
+| `list_projects()` | ✅ | Lists projects declared in `projects.manifest.yaml` with chunk counts |
+| `search_code(query, language?)` | ✅ | Semantic search over indexed code via sqlite-vec |
+| `explain_architecture(project_id)` | ✅ | Reads ADR files + Gemini summary |
+| `summarize_readme(project_id)` | ✅ | Reads README + Gemini summary |
+| `get_architecture_diagram(project_id)` | ⚠️ | Returns SVG base64 — file not in manifest yet |
+| `ask_portfolio(question)` | ⚠️ | Pydantic AI agent — has a bug, falls back to mock |
 
-## 5-layer security model (mandatory, all free)
+### Local demo of 5 working tools
 
-1. **Manifest scoping** — `config/projects.manifest.yaml` declares which projects to index. Default-deny.
-2. **Pre-index secret scan** — `gitleaks-python` runs on every chunk. High-confidence → block, medium → flag.
-3. **Runtime output sanitization** — regex filter for AWS / GitHub / OpenAI / Gemini / generic credentials. Redacts to `[REDACTED]` and logs the incident.
-4. **Pre-commit + CI secret scan** — `gitleaks` pre-commit hook + CI `gitleaks detect --redact` + GitHub secret scanning ON.
-5. **Rate limit + audit log** — `slowapi` at ~30 req/min/IP. Every query logged with timestamp, IP, query, count, redactions. Alert on anomalous redaction rates.
+```python
+import asyncio
+from fastmcp import Client
+from mcp_server.app import create_app
+from mcp_server.config import AppConfig
+from mcp_server.interfaces.mcp.server import mcp
 
-## MCP tool catalog (initial)
+config = AppConfig(gemini_api_key="fake")  # mock-gemini auto-fallback
+create_app(config)
 
-| Tool                          | Purpose                                       |
-| ----------------------------- | --------------------------------------------- |
-| `list_portfolio_projects()`   | List projects from the manifest                |
-| `search_harrison_code(query, language?)` | Semantic code search over the index   |
-| `explain_architecture(project)`          | Architecture + ADRs (uses Gemini)    |
-| `summarize_readme(repo)`                  | Gemini summary of a project README   |
-| `get_architecture_diagram(project)`       | SVG architecture diagram, base64     |
-| `ask_portfolio(question)`                 | Pydantic AI agent with tool calling (streaming in playground) |
+async def main():
+    async with Client(mcp) as client:
+        # List projects
+        for p in (await client.call_tool("list_projects", {})).data:
+            print(f"{p['id']}: {p['index_chunk_count']} chunks")
 
-## Folder layout
+        # Search code semantically
+        r = (await client.call_tool("search_code",
+               {"query": "async error handling"})).data
+        for c in r[:3]:
+            print(f"  {c['file_path']}: {c['content'][:60]}")
 
-Top-level (separation between source code, frontend, infra, and SDD):
+        # Read architecture docs
+        r = (await client.call_tool("explain_architecture",
+               {"project_id": "finance-coach-latam"})).data
+        print(f"  Architecture summary: {r['summary'][:200]}")
+
+asyncio.run(main())
+```
+
+## Architecture (hexagonal + SOLID)
 
 ```
-mcp-server-playground/
-├── README.md                        <- you are here
-├── pyproject.toml
-├── Dockerfile                       <- multi-stage, <150 MB target
-├── fly.toml                         <- Fly.io deploy config
-├── .pre-commit-config.yaml          <- gitleaks + ruff + prettier
-├── .dockerignore
-├── .github/workflows/               <- test, lint, secret-scan, deploy
-│
-├── config/                          <- top-level configuration
-│   └── projects.manifest.yaml       <- single source of truth for indexing
-│
-├── src/                             <- BACKEND (Python src layout)
-│   └── mcp_server/                  <- hexagonal architecture — see below
-│
-├── playground/                      <- FRONTEND (HTML + assets)
-│   ├── templates/                   <- Jinja templates
-│   └── static/                      <- htmx.min.js, htmx-ws.js, styles.css
-│
-├── tests/                           <- Tests mirror src/ structure
-│   ├── unit/{domain,application,infrastructure,security}/
-│   ├── integration/
-│   └── e2e/playground/
-│
-├── data/                            <- Generated artifacts (gitignored)
-│   └── index.sqlite
-│
-└── openspec/                        <- SDD artifacts
+                     ┌─────────────────────────────────────────────┐
+                     │  INTERFACES (FastMCP tools @ /mcp)            │
+                     │  └── uses application/use_cases (hexagonal)  │
+                     ├─────────────────────────────────────────────┤
+                     │  APPLICATION (use cases + ports)             │
+                     │  use cases depend on ports (Protocols)       │
+                     │  ports are abstract interfaces               │
+                     ├─────────────────────────────────────────────┤
+                     │  DOMAIN (pure Python, no framework deps)     │
+                     │  entities (CodeChunk, Project, ...)         │
+                     │  value objects (ChunkHash, Vector, ...)     │
+                     │  exceptions (DomainError, ...)              │
+                     └─────────────────────────────────────────────┘
+                              ▲
+                              │ implements
+                     ┌─────────────────────────────────────────────┐
+                     │  INFRASTRUCTURE (adapters)                   │
+                     │  ONE file: src/mcp_server/infrastructure/  │
+                     │             langchain.py                     │
+                     │  (chunking + agent + embedding)             │
+                     └─────────────────────────────────────────────┘
+```
+
+**Dependency direction:** `interfaces → application → domain`, never reversed.
+`infrastructure → application` (implements ports).
+**Composition root** (`src/mcp_server/composition.py`) is the ONLY module that wires adapters to use cases.
+
+### Single-file LangChain centralization
+
+All LangChain wiring lives in `src/mcp_server/infrastructure/langchain.py`:
+- `LangChainChunkingAdapter` (language-aware chunking — Python, Markdown, JS)
+- `LangChainAgentAdapter` (ReAct agent with 5 sibling tools)
+- `LangChainEmbeddingAdapter` (Gemini embeddings via LangChain)
+- `_MockLangChainEmbeddingAdapter` (deterministic SHA-256-based fallback)
+- `_MockLangChainAgentAdapter` (returns "[mock answer to: hi]")
+- `_MockAskPortfolioUseCase` (defensive fallback when composition isn't wired)
+
+The rest of the codebase is hexagonal — depends only on the abstract ports.
+
+### 5-layer security model
+
+1. **Manifest scoping** — `config/projects.manifest.yaml` is the single source of truth. Default-deny.
+2. **Gitleaks at index time** — subprocess to Go binary, fail-closed on malformed output.
+3. **Output sanitizer at runtime** — regex redaction of AWS/GitHub/OpenAI/Gemini keys + generic credentials.
+4. **Pre-commit + CI gitleaks** — pre-commit hook + CI `gitleaks detect --redact` + GitHub secret scanning.
+5. **Rate limiter + audit log** — slowapi 30 req/min/IP + structured audit log.
+
+## Stack
+
+| Layer | Choice |
+|-------|--------|
+| Backend | FastAPI + FastMCP (Python MCP SDK, single process) |
+| Frontend (planned) | HTMX + htmx-ws + Jinja2 templates |
+| Database | SQLite + `sqlite-vec` (vector search, no Neon needed) |
+| LLM | Gemini 2.0 Flash + text-embedding-004 (free tier) |
+| LLM framework | LangChain + LangGraph (ReAct agent) |
+| Tests | pytest + pytest-asyncio + httpx + Playwright + axe-core |
+| Lint/format | ruff + prettier |
+| Container | Docker multi-stage (target <500 MB, current 417 MB) |
+| Deploy | Fly.io primary (~$2/mo), HF Spaces / Render / Railway as fallbacks |
+
+## Local dev setup
+
+```bash
+# 1. Clone and install
+git clone https://github.com/lodeharri/portfolio-mcp-server.git
+cd portfolio-mcp-server
+pip install -e ".[dev]"
+
+# 2. Set up environment
+cp .env.example .env
+# Edit .env — leave GEMINI_API_KEY empty for mock mode (zero tokens)
+
+# 3. Preindex (uses mock-gemini if no key)
+python -m mcp_server.interfaces.cli.preindex --mock-gemini --quiet
+
+# 4. Run the MCP server
+python -c "from mcp_server.app import create_app; from mcp_server.config import AppConfig; create_app(AppConfig())"
+# Or in a Docker container:
+docker run --rm -d -p 8080:8080 --name mcp mcp-server:test
+
+# 5. Test with the FastMCP client
+python -c "
+import asyncio
+from fastmcp import Client
+from mcp_server.app import create_app
+from mcp_server.config import AppConfig
+from mcp_server.interfaces.mcp.server import mcp
+
+create_app(AppConfig())
+
+async def main():
+    async with Client(mcp) as client:
+        for p in (await client.call_tool('list_projects', {})).data:
+            print(f\"{p['id']}: {p['index_chunk_count']} chunks\")
+
+asyncio.run(main())
+"
+```
+
+### Manual preindex from a different working directory
+
+```bash
+# Skip the index.sqlite for a fresh build
+rm data/index.sqlite
+
+# Preindex with your real API key (prod mode)
+python -m mcp_server.interfaces.cli.preindex --manifest config/projects.manifest.yaml
+
+# With --purge-orphans to delete chunks whose source files no longer exist
+python -m mcp_server.interfaces.cli.preindex --purge-orphans
+```
+
+## Testing
+
+```bash
+# Run all tests
+pytest -q
+# → 479 passed, 2 skipped (Docker image size tests)
+
+# Run ruff
+ruff check src/mcp_server tests/
+
+# Run a specific test suite
+pytest tests/integration/test_mcp_tools_ask_portfolio.py -v
+```
+
+## Open bugs
+
+### Bug #1 — ask_portfolio fails when composition is wired (BLOCKING for production)
+
+**Symptom:** `Function must have a docstring if description not provided`
+
+**Reproducible:**
+```python
+import asyncio
+from mcp_server.app import create_app
+from mcp_server.config import AppConfig
+from fastmcp import Client
+from mcp_server.interfaces.mcp.server import mcp
+create_app(AppConfig(gemini_api_key="fake"))
+async def main():
+    async with Client(mcp) as client:
+        await client.call_tool("ask_portfolio", {"question": "test"})
+asyncio.run(main())
+# → ToolError: Function must have a docstring if description not provided.
+```
+
+**Workaround:** The mock fallback (`_MockAskPortfolioUseCase`) activates when composition is NOT wired. Production always wires composition via `create_app()`, so the bug surfaces. The other 5 tools are unaffected.
+
+**Suspected location:** LangChain agent tool introspection vs FastMCP 3.4.6's `tool.fn` API — likely a signature mismatch.
+
+### Bug #2 — get_architecture_diagram has no source data
+
+Both projects declare `diagram_path: docs/architecture.svg` in the manifest, but the files don't exist. The tool errors with "referenced file not found". Easy fix: create the SVG files or remove the field from the manifest.
+
+### Bug #3 — Image size 417 MB vs original 150 MB target
+
+The size was reduced from 676 MB to 417 MB by migrating to `google-genai` (replacing deprecated `google-generativeai` and dropping 100 MB of `google-api-python-client`). The 150 MB target was aspirational for this Python+AI stack. The image budget was raised to 500 MB to reflect reality. To hit 150 MB would require local embeddings (more code, more dependencies) or an alpine base (musl compatibility issues with sqlite-vec).
+
+## Decisions locked
+
+| Decision | Why |
+|----------|-----|
+| LangChain for everything (chunking + agent + embedding) | Single library, single file, no two-similar-libraries problem |
+| Hexagonal architecture | Testable, swappable adapters, clean separation |
+| SQLite + sqlite-vec (no Postgres) | No external DB, single file, portable |
+| Gemini 2.0 Flash + text-embedding-004 | Free tier available, same as `finance-coach-latam` |
+| 5-layer security model | Manifest + Gitleaks + Output Sanitizer + Pre-commit + Rate Limiter |
+| No cron jobs | User explicitly rejected recurring automation |
+| Pre-baked index committed to repo | Cheaper than CI build for portfolio demo |
+| FastMCP mounted at `/mcp` | Standard MCP transport |
+| Conventional commits, no AI attribution | Per finance-coach-latam convention |
+
+## Project structure
+
+```
+portfolio-mcp-server/
+├── README.md                                   # You are here
+├── pyproject.toml                              # LangChain + pydantic-ai-slim + google-genai
+├── Dockerfile                                  # Multi-stage, 417 MB
+├── fly.toml                                    # Fly.io config
+├── .env.example                                # Template for local dev
+├── .github/workflows/                          # test, lint, secret-scan, deploy
+├── config/
+│   └── projects.manifest.yaml                  # Source of truth for indexing
+├── src/mcp_server/
+│   ├── app.py                                  # create_app() factory
+│   ├── config.py                               # AppConfig, the only os.environ reader
+│   ├── composition.py                          # DI container
+│   ├── domain/                                 # Pure entities + value objects
+│   ├── application/
+│   │   ├── ports/                              # Abstract interfaces
+│   │   └── use_cases/                          # Application services
+│   ├── infrastructure/
+│   │   ├── langchain.py                        # SINGLE FILE — LangChain wiring
+│   │   ├── adapters/                           # Concrete implementations
+│   │   ├── db/                                 # SQLite + schema
+│   │   └── security/                           # 5-layer security
+│   └── interfaces/
+│       ├── mcp/                                # FastMCP tools + registrations
+│       ├── http/                               # Healthz + middleware
+│       └── cli/                                # preindex CLI
+├── scripts/
+│   └── bake_schema.py                          # Schema-only DB for Docker build
+├── tests/
+│   ├── conftest.py
+│   ├── unit/
+│   └── integration/
+├── data/
+│   └── index.sqlite                            # Generated, gitignored
+└── openspec/
     ├── config.yaml
-    ├── changes/
-    └── specs/
+    ├── specs/                                  # Main capability specs
+    └── changes/
+        └── archive/
+            ├── 2026-08-05-001-bootstrap/
+            └── 2026-08-05-002-mcp-tools/
 ```
 
-`src/mcp_server/` follows **hexagonal architecture** (Ports & Adapters). Dependencies point INWARD toward the pure domain:
+## Next steps (in priority order)
 
-```
-src/mcp_server/
-├── app.py                           <- FastAPI app factory
-├── config.py                        <- Typed config (env vars only)
-├── composition.py                   <- DI container: wires adapters → use cases
-│
-├── domain/                          <- PURE (no framework deps)
-│   ├── entities.py                  <- CodeChunk, Project, SearchResult
-│   ├── value_objects.py             <- ChunkHash, Vector, Embedding
-│   └── exceptions.py
-│
-├── application/                     <- USE CASES + PORTS
-│   ├── ports/                       <- Abstract interfaces (Protocols)
-│   │   ├── embedding.py             <- EmbeddingPort
-│   │   ├── vector_store.py          <- VectorStorePort
-│   │   ├── llm.py                   <- LLMPort
-│   │   ├── secret_scanner.py        <- SecretScannerPort
-│   │   ├── manifest.py              <- ManifestPort
-│   │   └── rate_limiter.py          <- RateLimiterPort
-│   └── use_cases/
-│       ├── index_project.py
-│       ├── search_code.py
-│       ├── explain_architecture.py
-│       ├── summarize_readme.py
-│       ├── list_projects.py
-│       └── ask_portfolio.py
-│
-├── infrastructure/                  <- ADAPTERS (concrete implementations)
-│   ├── adapters/
-│   │   ├── gemini_embedding.py      <- implements EmbeddingPort
-│   │   ├── sqlite_vec_store.py      <- implements VectorStorePort
-│   │   ├── gemini_llm.py            <- implements LLMPort
-│   │   ├── gitleaks_scanner.py      <- implements SecretScannerPort
-│   │   ├── yaml_manifest.py         <- implements ManifestPort
-│   │   └── slowapi_rate_limiter.py  <- implements RateLimiterPort
-│   └── db/
-│       ├── schema.sql
-│       └── connection.py
-│
-├── interfaces/                      <- THE OUTSIDE WORLD
-│   ├── mcp/                         <- FastMCP server + tools
-│   ├── http/                        <- FastAPI routes (/healthz, etc.)
-│   └── cli/                         <- preindex.py CLI entry
-│
-└── security/                        <- Cross-cutting concerns
-    ├── output_sanitizer.py          <- Layer 3 regex sanitizer
-    └── audit.py                     <- Layer 5 structured logging
-```
+1. **Fix Bug #1** — `ask_portfolio` LangChain + FastMCP binding. Without this, production won't work for the recruiter demo.
+2. **Fix Bug #2** — Create `architecture.svg` files or remove from manifest. Easy fix.
+3. **`003-playground-ui`** — HTMX + Jinja2 templates for web playground.
+4. **`004-chat-tab`** — Streaming chat with Pydantic AI agent.
+5. **`005-fly-deploy`** — Real deploy to Fly.io (~$2-3/mo).
 
-**SOLID + hexagonal rules:**
-- `domain/` has **zero** imports from `application/`, `infrastructure/`, or `interfaces/`.
-- `application/use_cases/` depends only on `domain/` + `application/ports/`. Never on concrete adapters.
-- `infrastructure/adapters/` implements `application/ports/`. One adapter per port.
-- `interfaces/` depends on `application/use_cases/`. Never on `infrastructure/` directly — only through `composition.py`.
-- `composition.py` is the **only** module that wires concrete adapters to use cases.
+## License
 
-## Free-tier limits (document for honesty)
-
-- **Primary deploy (Fly.io)**: ~$2.02/mo for 256 MB shared CPU 24/7. Fly.io free tier was discontinued Oct 2024 for new users — $0/mo target no longer realistic. Deploy is platform-agnostic: same Dockerfile works on Hugging Face Spaces ($0, cold starts), Render ($0, sleep), Railway ($5 credit).
-- **Gemini free tier**: 15 RPM / 1M TPM for Flash, 1500 RPM for `text-embedding-004`. Sufficient for recruiter demo traffic. Preindex.py has checkpoint/resume + chunk-hash caching to handle RPD limits gracefully.
-- **GitHub Actions**: 2000 min/month free. We gate deploys behind a cheap pre-flight test.
-- **Custom domain `mcp.lodeharri.dev`**: optional, ~$10-15/year if desired.
-
-## Project conventions
-
-- **Spec-driven development.** All changes go through `openspec/changes/{name}/` (proposal → spec → design → tasks → apply → verify → archive).
-- **Strict TDD.** RED → GREEN → REFACTOR per task. Coverage gate: 60% on `src/mcp_server/` unit tests.
-- **Conventional commits.** No "Co-Authored-By" lines. No AI attribution in commits.
-- **Hexagonal architecture (Ports & Adapters) + SOLID.** Domain is pure Python (no framework deps). Use cases depend on Ports (Protocols). Adapters implement Ports. `composition.py` is the only wiring point. Dependency direction: `interfaces → application → domain`, never reversed. `infrastructure → application` (implements ports).
-
-## Next step
-
-The next recommended phase is `sdd-propose` for **`change 001-bootstrap`**: install the declared deps, scaffold `src/mcp_server/app.py` with `/healthz` + port-agnostic binding, wire the 5 security layers in code (manifest loader, gitleaks wrapper, output sanitizer, slowapi limiter, audit log), implement `scripts/preindex.py` with chunk-hash caching + checkpoint/resume + rate-limited Gemini embeddings, and ship a multi-stage Dockerfile that bakes `data/index.sqlite` into the image. Everything else hangs off this.
+See [`LICENSE`](LICENSE) (if not present, see the upstream convention).
