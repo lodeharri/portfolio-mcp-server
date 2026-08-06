@@ -9,7 +9,7 @@ Two methods because the tools have distinct shapes:
 * ``summarize`` — single-shot text compression (used by
   ``summarize_readme``).
 * ``chat`` — multi-turn conversation with optional tool-calling (used by
-  the ``ask_portfolio`` Pydantic AI agent in the playground).
+  the ``ask_portfolio`` LangChain agent in the playground).
 """
 
 from __future__ import annotations

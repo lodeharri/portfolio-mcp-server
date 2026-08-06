@@ -5,7 +5,7 @@ Two operations:
 * :meth:`summarize` — single-shot text compression (used by the
   future ``summarize_readme`` MCP tool — ``002-mcp-tools``).
 * :meth:`chat` — multi-turn conversation with optional tool
-  definitions (used by the future ``ask_portfolio`` Pydantic AI agent
+  definitions (used by the future ``ask_portfolio`` LangChain agent
   in the playground — PR4 territory).
 
 The adapter re-uses the ADR-003 retry policy from

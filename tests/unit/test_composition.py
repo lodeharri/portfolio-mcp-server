@@ -74,7 +74,7 @@ class TestCompositionDataclass:
     def test_002_pr1_list_projects_use_case_is_wired(self) -> None:
         """002-mcp-tools PR1 wires ``list_projects_use_case`` as a real instance.
 
-        The remaining four MCP tool use cases and the Pydantic AI
+        The remaining four MCP tool use cases and the LangChain
         ``Agent`` land in PR2 / PR3.
         """
         from mcp_server.application.use_cases.list_projects import (

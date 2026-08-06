@@ -8,7 +8,7 @@ wire the two read-only MCP tool use cases:
 
 These were ``None`` placeholders in 001-bootstrap. The remaining four
 MCP tool use cases (``explain_architecture``, ``summarize_readme``,
-``get_architecture_diagram``, ``ask_portfolio``) and the Pydantic AI
+``get_architecture_diagram``, ``ask_portfolio``) and the LangChain
 ``Agent`` stay ``None`` until 002-mcp-tools PR2 / PR3 land.
 
 The hexagonal invariant test (``test_hexagonal_invariants.py``) ALSO
@@ -101,7 +101,7 @@ class TestCompositionWiredAdaptersContract:
     def test_ask_portfolio_use_case_is_real(self) -> None:
         """002-mcp-tools PR3: ``ask_portfolio_use_case`` MUST be wired.
 
-        The Pydantic AI agent is built inside ``create_composition`` and
+        The LangChain agent is built inside ``create_composition`` and
         injected into the ``AskPortfolioUseCase``. Without this wiring
         the ``ask_portfolio`` MCP tool would fall through to a
         not-wired ``RuntimeError``.

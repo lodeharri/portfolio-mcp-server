@@ -155,7 +155,7 @@ class RateLimitExceeded(DomainError):
     """Raised when an application-layer rate limit check rejects a request.
 
     Used by the ``ask_portfolio`` MCP tool (002-mcp-tools PR3) which
-    calls :meth:`RateLimiterPort.check` BEFORE invoking the Pydantic AI
+    calls :meth:`RateLimiterPort.check` BEFORE invoking the LangChain
     agent as belt-and-braces against a future router refactor that
     forgets the slowapi exception handler (the agent is the expensive
     endpoint — a 5-tool-call loop against Gemini is several cents per

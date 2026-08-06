@@ -4,8 +4,8 @@ Boots the FastMCP ``Client`` in-process (per FastMCP 3.4.6 docs) and
 verifies the new meta-tool is reachable via ``tools/call``.
 
 The composition root runs in ``--mock-gemini`` mode (no API key in
-the test env) so the Pydantic AI agent is built with a
-:class:`pydantic_ai.models.function.FunctionModel` that emits a
+the test env) so the LangChain agent adapter is built with a
+a deterministic local adapter emits a
 deterministic ``"[mock answer to: hi]"`` reply. The test asserts on
 that contract — not on real LLM output.
 
