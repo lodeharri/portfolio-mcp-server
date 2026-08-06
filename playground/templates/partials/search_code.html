@@ -1,0 +1,22 @@
+{# Fragment returned by POST /playground/api/search_code.
+
+Context variables:
+- query:   the search query echoed back
+- matches: list of dicts (chunk_hash, file_path, line_start, line_end,
+           content [sanitized], score, project_id)
+- error:   optional str — sanitized error message when the use case failed
+#}
+{% if error %}
+<p class="error">{{ error }}</p>
+{% elif not matches %}
+<p>No matches for "<code>{{ query }}</code>".</p>
+{% else %}
+<p>{{ matches|length }} match{% if matches|length != 1 %}es{% endif %} for "<code>{{ query }}</code>":</p>
+{% for match in matches %}
+<article class="playground-match">
+    <div class="file-path">{{ match.file_path }}:{{ match.line_start }}-{{ match.line_end }}</div>
+    <div class="meta">project={{ match.project_id }} · score={{ "%.3f"|format(match.score) }}</div>
+    <pre>{{ match.content }}</pre>
+</article>
+{% endfor %}
+{% endif %}

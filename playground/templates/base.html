@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}MCP Playground{% endblock %}</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <nav class="playground-nav">
+        <a href="/">Home</a>
+        <a href="/playground">Playground</a>
+        <a href="/mcp">MCP endpoint</a>
+        <span style="flex:1"></span>
+        <span style="color: var(--solar-base1); font-size: 0.875rem;">
+            portfolio-mcp-server
+        </span>
+    </nav>
+
+    <main class="playground-main">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="playground-footer" style="text-align: center;">
+        Built with FastAPI + HTMX + Jinja2 + the 5-layer security model.
+    </footer>
+
+    <script src="/static/htmx.min.js" defer></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

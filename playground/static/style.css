@@ -1,0 +1,262 @@
+/* playground/static/style.css — Solarized Phosphor palette + minimal layout.
+ *
+ * Palette tokens come from the canonical Solarized Phosphor hex values
+ * published by Ethan Schoonover at https://ethanschoonover.com/solarized/.
+ * The 16 canonical tokens (8 base tones + 8 accent colors) are exposed as
+ * CSS custom properties on :root so the rest of the playground can
+ * reference them without hard-coding hex values.
+ *
+ * The file is single-handedly the rendered look of every page in the
+ * playground; we keep it small (~80 lines), commented, and free of
+ * external imports so no CDN fallback is required at page load.
+ */
+
+:root {
+    /* --- Solarized Phosphor base tones (ethanschoonover.com) --- */
+    --solar-base03: #002b36; /* darkest background, default body text on light bg */
+    --solar-base02: #073642; /* optional background emphasis */
+    --solar-base01: #586e75; /* comments / secondary text on light bg */
+    --solar-base00: #657b83; /* body text on light bg */
+    --solar-base0: #839496;  /* primary body text */
+    --solar-base1: #93a1a1;  /* emphasized text */
+    --solar-base2: #eee8d5;  /* background lightest content */
+    --solar-base3: #fdf6e3;  /* default background */
+
+    /* --- Solarized Phosphor accent colors --- */
+    --solar-yellow: #b58900;  /* warm accent (links, headings) */
+    --solar-orange: #cb4b16;  /* warm secondary accent */
+    --solar-red: #dc322f;     /* error / critical */
+    --solar-magenta: #d33682; /* tag accent */
+    --solar-violet: #6c71c4;  /* secondary link */
+    --solar-blue: #268bd2;    /* primary link */
+    --solar-cyan: #2aa198;    /* info / success secondary */
+    --solar-green: #859900;   /* success / confirm */
+
+    /* --- Derived semantic palette (used by templates) --- */
+    --playground-bg: var(--solar-base3);
+    --playground-text: var(--solar-base03);
+    --playground-link: var(--solar-blue);
+    --playground-link-hover: var(--solar-violet);
+    --playground-card-bg: var(--solar-base2);
+    --playground-card-border: var(--solar-base1);
+    --playground-error: var(--solar-red);
+    --playground-success: var(--solar-green);
+    --playground-info: var(--solar-cyan);
+    --playground-warning: var(--solar-yellow);
+    --playground-muted: var(--solar-base01);
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    margin: 0;
+    padding: 0;
+    background-color: var(--playground-bg);
+    color: var(--playground-text);
+    font-family: "Source Code Pro", "Fira Code", monospace;
+    line-height: 1.5;
+}
+
+a {
+    color: var(--playground-link);
+    text-decoration: none;
+}
+
+a:hover,
+a:focus {
+    color: var(--playground-link-hover);
+    text-decoration: underline;
+}
+
+nav.playground-nav {
+    display: flex;
+    gap: 1rem;
+    padding: 1rem 1.5rem;
+    background-color: var(--solar-base02);
+    color: var(--solar-base3);
+    border-bottom: 1px solid var(--playground-card-border);
+}
+
+nav.playground-nav a {
+    color: var(--solar-base3);
+    font-weight: 600;
+}
+
+nav.playground-nav a:hover {
+    color: var(--solar-yellow);
+}
+
+main.playground-main {
+    max-width: 52rem;
+    margin: 0 auto;
+    padding: 2rem 1.5rem;
+}
+
+h1,
+h2,
+h3 {
+    color: var(--solar-base02);
+}
+
+h1 {
+    font-size: 1.875rem;
+    margin: 0 0 1rem;
+}
+
+h2 {
+    font-size: 1.375rem;
+    margin: 2rem 0 0.75rem;
+}
+
+p {
+    margin: 0.75rem 0;
+}
+
+ul.playground-projects {
+    list-style: none;
+    padding: 0;
+    margin: 1rem 0;
+    display: grid;
+    gap: 0.75rem;
+}
+
+ul.playground-projects li {
+    padding: 0.75rem 1rem;
+    background-color: var(--playground-card-bg);
+    border: 1px solid var(--playground-card-border);
+    border-radius: 4px;
+}
+
+ul.playground-projects li .id {
+    color: var(--solar-magenta);
+    font-weight: 700;
+}
+
+ul.playground-projects li .chunks {
+    color: var(--playground-muted);
+    font-size: 0.875rem;
+}
+
+div.playground-cta {
+    display: flex;
+    gap: 1rem;
+    margin: 1.5rem 0;
+}
+
+div.playground-cta a {
+    display: inline-block;
+    padding: 0.5rem 1rem;
+    background-color: var(--solar-blue);
+    color: var(--solar-base3);
+    border-radius: 4px;
+    font-weight: 600;
+}
+
+div.playground-cta a.secondary {
+    background-color: var(--solar-violet);
+}
+
+div.playground-cta a:hover {
+    text-decoration: none;
+    filter: brightness(1.1);
+}
+
+section.playground-form-card {
+    margin: 1.5rem 0;
+    padding: 1rem 1.25rem;
+    background-color: var(--playground-card-bg);
+    border: 1px solid var(--playground-card-border);
+    border-radius: 6px;
+}
+
+section.playground-form-card h2 {
+    margin-top: 0;
+    color: var(--solar-yellow);
+}
+
+section.playground-form-card form {
+    display: grid;
+    gap: 0.5rem;
+}
+
+section.playground-form-card label {
+    font-weight: 600;
+    color: var(--solar-base02);
+}
+
+section.playground-form-card input[type="text"],
+section.playground-form-card input[type="search"],
+section.playground-form-card select {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid var(--playground-card-border);
+    background-color: var(--solar-base3);
+    color: var(--playground-text);
+    border-radius: 3px;
+    font-family: inherit;
+    font-size: 1rem;
+}
+
+section.playground-form-card button[type="submit"] {
+    margin-top: 0.5rem;
+    padding: 0.5rem 1rem;
+    background-color: var(--solar-green);
+    color: var(--solar-base3);
+    border: none;
+    border-radius: 3px;
+    font-weight: 600;
+    cursor: pointer;
+    justify-self: start;
+}
+
+section.playground-form-card button[type="submit"]:hover {
+    filter: brightness(1.1);
+}
+
+section.playground-form-card .result {
+    margin-top: 1rem;
+    padding: 0.75rem;
+    background-color: var(--solar-base3);
+    border-left: 3px solid var(--playground-info);
+    border-radius: 3px;
+}
+
+section.playground-form-card .result.error {
+    border-left-color: var(--playground-error);
+    color: var(--playground-error);
+}
+
+article.playground-match {
+    margin: 0.5rem 0;
+    padding: 0.5rem 0.75rem;
+    background-color: var(--solar-base2);
+    border-left: 3px solid var(--solar-violet);
+    border-radius: 3px;
+}
+
+article.playground-match .file-path {
+    color: var(--solar-magenta);
+    font-weight: 600;
+}
+
+article.playground-match .meta {
+    color: var(--playground-muted);
+    font-size: 0.875rem;
+}
+
+article.playground-match pre {
+    margin: 0.5rem 0 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+footer.playground-footer {
+    margin-top: 3rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--playground-card-border);
+    color: var(--playground-muted);
+    font-size: 0.875rem;
+}

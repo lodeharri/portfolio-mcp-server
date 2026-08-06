@@ -1,0 +1,22 @@
+{# Fragment returned by POST /playground/api/explain_architecture.
+
+Context variables:
+- result: ExplainArchitectureResult dataclass
+    (project_id, display_name, summary, sources)
+- error:  optional str — sanitized error message when the use case failed
+#}
+{% if error %}
+<p class="error">{{ error }}</p>
+{% else %}
+<h3 style="margin:0">{{ result.display_name }}</h3>
+<p style="color: var(--solar-magenta); font-weight: 600;">{{ result.project_id }}</p>
+<p>{{ result.summary }}</p>
+{% if result.sources %}
+<h4 style="margin-bottom: 0.25rem;">Sources</h4>
+<ul>
+    {% for source in result.sources %}
+    <li><code>{{ source }}</code></li>
+    {% endfor %}
+</ul>
+{% endif %}
+{% endif %}
