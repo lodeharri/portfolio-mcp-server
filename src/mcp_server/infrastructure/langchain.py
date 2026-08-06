@@ -52,6 +52,11 @@ class LangChainChunkingAdapter:
         ]
 
 
+class _MockLangChainAgentAdapter:
+    async def run(self, request: AgentRequest, tools: Sequence[Any]) -> AgentResponse:
+        return AgentResponse(answer="[mock answer to: hi]")
+
+
 class LangChainAgentAdapter:
     """Run sibling tools through a LangGraph ReAct agent."""
 
@@ -95,5 +100,7 @@ def create_langchain_adapter(
 def create_langchain_agent(
     api_key: str,
     model: str = "gemini-2.0-flash",
-) -> LangChainAgentAdapter:
+) -> LangChainAgentAdapter | _MockLangChainAgentAdapter:
+    if not api_key.strip():
+        return _MockLangChainAgentAdapter()
     return LangChainAgentAdapter(api_key=api_key, model=model)

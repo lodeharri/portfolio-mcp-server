@@ -128,7 +128,7 @@ def set_use_cases(
 def set_ask_portfolio_use_case(use_case: AskPortfolioUseCase | None) -> None:
     """Populate the ``ask_portfolio`` use case container.
 
-    Separate from :func:`set_use_cases` because the Pydantic AI agent
+    Separate from :func:`set_use_cases` because the LangChain agent
     (and therefore the use case) is built AFTER the sibling tool
     wrappers register their ``@mcp.tool`` decorators — the agent
     needs the 5 sibling tool functions as function-calling tools.
@@ -316,7 +316,7 @@ async def get_architecture_diagram_tool(project_id: str) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# ask_portfolio — Pydantic AI agent (PR3 of 002-mcp-tools)
+# ask_portfolio — LangChain agent (PR3 of 002-mcp-tools)
 # ---------------------------------------------------------------------------
 
 
@@ -324,7 +324,7 @@ async def get_architecture_diagram_tool(project_id: str) -> dict[str, Any]:
     name="ask_portfolio",
     description=(
         "Ask a free-form question about Harrison Rodriguez's portfolio. "
-        "A Pydantic AI agent decides which sibling tools to call "
+        "A LangChain agent decides which sibling tools to call "
         "(list_projects, search_code, explain_architecture, "
         "summarize_readme, get_architecture_diagram) and synthesizes a "
         "recruiter-grade answer. Output is sanitized (Layer 3) and the "
@@ -335,7 +335,7 @@ async def ask_portfolio_tool(
     question: str,
     conversation_id: str | None = None,
 ) -> dict[str, Any]:
-    """Drive the Pydantic AI agent against a recruiter's question.
+    """Drive the LangChain agent against a recruiter's question.
 
     Args:
         question: Natural-language recruiter question. MUST be non-empty
