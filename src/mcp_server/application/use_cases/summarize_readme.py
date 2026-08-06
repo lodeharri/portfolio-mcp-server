@@ -1,4 +1,12 @@
-"""Application use case for summarizing a manifest-declared README."""
+"""Application use case for summarizing a manifest-declared README.
+
+The use case reads the declared README for a project and asks the LLM
+for a one-paragraph recruiter-friendly summary, max ``max_tokens``
+(200 by default — see Decision #12 / change 003-playground-ui for the
+short-first discipline).
+
+Hexagonal contract: ports only — no FastAPI, no concrete adapters.
+"""
 
 from __future__ import annotations
 
@@ -16,7 +24,10 @@ MAX_README_BYTES = 32 * 1024
 @dataclass(frozen=True)
 class SummarizeReadmeRequest:
     project_id: str
-    max_tokens: int = 300
+    # Short-first principle (Decision #12): default = 200 tokens, the
+    # minimum that completes a typical one-paragraph README summary.
+    # Caller can override.
+    max_tokens: int = 200
 
 
 @dataclass(frozen=True)

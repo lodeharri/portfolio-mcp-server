@@ -86,6 +86,37 @@ def test_reads_declared_adr_and_summarizes_once(tmp_path: Path) -> None:
     assert llm.calls == [(adr.read_text(), 42)]
 
 
+def test_default_max_tokens_is_350(tmp_path: Path) -> None:
+    """Decision #12 / change 003-playground-ui: the default ``max_tokens``
+    for ``explain_architecture`` is **350** (was 500). A fresh request
+    without an explicit ``max_tokens`` MUST call the LLM with
+    ``max_tokens=350``.
+    """
+    adr = tmp_path / "docs" / "design.md"
+    adr.parent.mkdir()
+    adr.write_text("Architecture uses ports and adapters.")
+    uc, llm, _ = make_use_case(tmp_path)
+
+    # No explicit max_tokens — the dataclass default must kick in.
+    uc.execute(ExplainArchitectureRequest(project_id="demo"))
+
+    assert llm.calls == [(adr.read_text(), 350)]
+
+
+def test_explicit_max_tokens_overrides_default(tmp_path: Path) -> None:
+    """The default is the *floor*, not a *ceiling*. A caller-supplied
+    ``max_tokens=1000`` MUST be passed through to the LLM.
+    """
+    adr = tmp_path / "docs" / "design.md"
+    adr.parent.mkdir()
+    adr.write_text("Long-form architecture doc.")
+    uc, llm, _ = make_use_case(tmp_path)
+
+    uc.execute(ExplainArchitectureRequest(project_id="demo", max_tokens=1000))
+
+    assert llm.calls == [(adr.read_text(), 1000)]
+
+
 def test_sanitizes_model_output_and_falls_back_to_id(tmp_path: Path) -> None:
     adr = tmp_path / "docs" / "design.md"
     adr.parent.mkdir()
