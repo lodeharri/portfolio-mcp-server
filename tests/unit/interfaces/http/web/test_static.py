@@ -141,6 +141,55 @@ class TestVendoredHtmxAsset:
         assert "max-age=31536000" in cache_control
         assert "immutable" in cache_control
 
+    def test_base_template_loads_htmx_with_sri_integrity(self, web_app) -> None:
+        """REL-10: the HTMX ``<script>`` tag MUST carry an SRI integrity attribute.
+
+        A future HTMX security advisory would otherwise let the
+        browser serve a cached vulnerable copy forever. The
+        ``integrity`` + ``crossorigin`` attributes force the browser
+        to revalidate the asset against the SHA-384 hash whenever the
+        tag is parsed.
+
+        We assert the substring is present in the rendered template
+        (and the attribute value matches the on-disk sha384 of the
+        vendored file).
+        """
+        import base64
+        import hashlib as _hl
+        import re
+
+        from starlette.testclient import TestClient
+
+        with TestClient(web_app) as client:
+            html = client.get("/").text
+
+        # The script tag MUST carry an integrity attribute (sha384
+        # preferred — sha512 wasn't ratified in any browser at the
+        # time of writing).
+        assert 'integrity="sha384-' in html, (
+            "base.html script tag must declare SRI sha384 integrity"
+        )
+        assert 'crossorigin="anonymous"' in html, (
+            "base.html script tag must declare crossorigin=anonymous for SRI"
+        )
+
+        # Extract the declared sha384 digest and assert it matches the
+        # on-disk file. If anyone replaces the vendored HTMX the hash
+        # MUST be updated alongside it.
+        match = re.search(r'integrity="sha384-([A-Za-z0-9+/=]+)"', html)
+        assert match is not None, "SRI integrity attribute not found in base.html"
+        declared_b64 = match.group(1)
+        declared_bytes = base64.b64decode(declared_b64)
+
+        on_disk = PLAYGROUND_STATIC_DIR.joinpath("htmx.min.js").read_bytes()
+        computed = _hl.sha384(on_disk).digest()
+        assert declared_bytes == computed, (
+            "SRI integrity hash in base.html is stale relative to the "
+            "vendored htmx.min.js; regenerate via "
+            "``base64.b64encode(hashlib.sha384(open("
+            "'playground/static/htmx.min.js','rb').read()).digest()).decode()``"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Solarized Phosphor style sheet
