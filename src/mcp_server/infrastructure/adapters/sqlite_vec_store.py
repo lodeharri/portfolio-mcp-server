@@ -188,10 +188,10 @@ class SqliteVecStore:
                 chunk_hash,
                 project_id,
                 file_path,
-                start_char,
-                end_char,
+                _start_char,
+                _end_char,
                 content,
-                flagged,
+                _flagged,
                 distance,
             ) = row
             results.append(

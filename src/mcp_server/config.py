@@ -19,6 +19,13 @@ Two types live here:
 from __future__ import annotations
 
 import os
+
+# Load .env file at module import time — but ONLY outside test runs.
+# During tests we want deterministic behaviour (mock-gemini by default),
+# not the user's local `.env` overwriting test env vars. Pytest sets
+# `pytest` in `sys.modules` long before this module is imported, so the
+# check is reliable.
+import sys
 from datetime import datetime, timezone
 from importlib import metadata as importlib_metadata
 from pathlib import Path
@@ -27,12 +34,6 @@ from typing import Final
 from dotenv import load_dotenv
 from pydantic import BaseModel, ConfigDict, Field
 
-# Load .env file at module import time — but ONLY outside test runs.
-# During tests we want deterministic behaviour (mock-gemini by default),
-# not the user's local `.env` overwriting test env vars. Pytest sets
-# `pytest` in `sys.modules` long before this module is imported, so the
-# check is reliable.
-import sys
 if "pytest" not in sys.modules:
     load_dotenv()
 

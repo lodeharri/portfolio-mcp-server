@@ -90,7 +90,7 @@ def app_with_secret_route():
     app = FastAPI()
     # Add the middleware at the bottom so it wraps /echo.
     app.add_middleware(OutputSanitizerMiddleware, sanitizer=sanitizer)
-    _ = request = None
+    _ = None
     # Use raw middleware via add_middleware — we already passed it.
     _ = Request
 

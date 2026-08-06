@@ -97,7 +97,24 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101", "S106"]   # asserts and hardcoded passwords in tests are fine
+"tests/**" = [
+    "S101",  # asserts
+    "S106",  # hardcoded passwords in test fixtures
+    "S108",  # /tmp in test fixtures is intentional
+    "S608",  # f-string SQL in test fixtures is safe (table names are internal)
+]
+"src/mcp_server/infrastructure/adapters/sqlite_vec_store.py" = [
+    "S608",  # f-string SQL with internal table names (not user input)
+]
+"src/mcp_server/infrastructure/adapters/gemini_embedding.py" = [
+    "S311",  # random.uniform for retry jitter is not crypto
+]
+"src/mcp_server/infrastructure/adapters/gemini_llm.py" = [
+    "S311",  # random.uniform for retry jitter is not crypto
+]
+"tests/integration/test_docker_size.py" = [
+    "S607",  # subprocess for docker is fixed
+]
 
 [tool.ruff.format]
 quote-style = "double"
