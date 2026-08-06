@@ -36,6 +36,7 @@ from mcp_server.domain.exceptions import (
     GeminiTransientError,
     ManifestProjectNotFoundError,
     McpServerError,
+    RateLimitExceeded,
 )
 
 # ---------------------------------------------------------------------------
@@ -113,6 +114,20 @@ class TestMappedDomainErrors:
         # the helper writes a clearer message.
         assert "dim" in str(result).lower()
         assert "rebuild" in str(result).lower()
+
+    def test_rate_limit_exceeded_is_authored(self) -> None:
+        """``RateLimitExceeded`` (002-mcp-tools PR3) MUST be mapped to a
+        fixed authored message — never echo the ``client_ip`` or counter."""
+        from mcp_server.interfaces.mcp.tool_errors import translate_tool_error
+
+        exc = RateLimitExceeded("ip=10.0.0.42 counter=31/30")
+        result = translate_tool_error(exc)
+
+        assert isinstance(result, ToolError)
+        # The literal "ip=10.0.0.42" MUST NOT leak.
+        assert "10.0.0.42" not in str(result)
+        assert "31/30" not in str(result)
+        assert "rate limit" in str(result).lower()
 
     def test_generic_domain_error_is_internal_error(self) -> None:
         """Any other :class:`DomainError` subclass defaults to ``internal error``."""

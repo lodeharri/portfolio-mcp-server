@@ -75,6 +75,7 @@ from mcp_server.domain.exceptions import (
     GeminiTransientError,
     ManifestProjectNotFoundError,
     McpServerError,
+    RateLimitExceeded,
 )
 
 __all__ = [
@@ -143,6 +144,12 @@ def translate_tool_error(exc: BaseException) -> ToolError:
         # Authored message: a "dim 1024 != 768" leak is fine but the
         # message is more useful to the recruiter.
         return ToolError("index dim mismatch — rebuild index")
+
+    if isinstance(exc, RateLimitExceeded):
+        # Per 002-mcp-tools PR3 spec: application-layer rate-limit
+        # rejection from ``ask_portfolio`` → JSON-RPC internal error.
+        # Authored message: no ``client_ip`` or counter value leaks.
+        return ToolError("rate limit exceeded")
 
     # --- Catch-all buckets (defensive defaults) ---
 

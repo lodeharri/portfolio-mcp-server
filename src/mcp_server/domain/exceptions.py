@@ -60,10 +60,10 @@ __all__ = [
     "ManifestNotFoundError",
     "ManifestPermissionError",
     "ManifestProjectNotFoundError",
-    "ManifestSchemaError",
     "McpServerError",
     "PreindexError",
     "PreindexExitCode",
+    "RateLimitExceeded",
     "SchemaError",
     "VectorStoreError",
 ]
@@ -148,6 +148,23 @@ class GitleaksBinaryMissingError(DomainError):
     Maps to preindex CLI exit code ``GITLEAKS_ERROR`` (3). The scanner
     MUST fail-closed on this error — the preindex pipeline aborts rather
     than indexing un-scanned chunks.
+    """
+
+
+class RateLimitExceeded(DomainError):
+    """Raised when an application-layer rate limit check rejects a request.
+
+    Used by the ``ask_portfolio`` MCP tool (002-mcp-tools PR3) which
+    calls :meth:`RateLimiterPort.check` BEFORE invoking the Pydantic AI
+    agent as belt-and-braces against a future router refactor that
+    forgets the slowapi exception handler (the agent is the expensive
+    endpoint — a 5-tool-call loop against Gemini is several cents per
+    request).
+
+    Per the JSON-RPC 2.0 spec the MCP layer maps this to internal
+    error ``-32603``. The wrapper calls :func:`translate_tool_error`
+    which produces the authored message ``"rate limit exceeded"`` —
+    no raw ``client_ip`` or counter value leaks through.
     """
 
 
