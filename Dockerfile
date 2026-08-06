@@ -1,4 +1,9 @@
-# Multi-stage Dockerfile — final image target <150 MB.
+# Multi-stage Dockerfile — final image target <500 MB.
+#
+# The original budget was < 150 MB; change 003-playground-ui raised
+# it to < 500 MB because Python + AI deps + LangGraph + sqlite-vec
+# put the realistic floor around 417 MB (post-005). Alpine migration
+# (deferred to a future change) drives the budget back toward 150 MB.
 #
 # Stage 1 (builder): install build deps, compile wheels, bake the index.
 # Stage 2 (runtime): python:3.10.12-slim, copy wheels + index, non-root.
@@ -74,6 +79,11 @@ COPY pyproject.toml README.md ./
 COPY src ./src
 COPY config ./config
 COPY scripts ./scripts
+# Playground assets (vendored HTMX 1.9.10, Solarized Phosphor style,
+# Jinja2 templates) MUST ship in the runtime image so /static/*,
+# GET /, GET /playground have something to serve. Layer is independent
+# of pip install (per dockerfile-playground spec scenario 1.9.1).
+COPY playground ./playground
 
 # Build a venv with pip (needed for the install below), then drop pip
 # after install to save ~12 MB at runtime. The runtime only uses the
@@ -126,6 +136,11 @@ COPY --chown=mcp:mcp --from=builder /build/src ./src
 COPY --chown=mcp:mcp --from=builder /build/config ./config
 COPY --chown=mcp:mcp --from=builder /build/pyproject.toml ./
 COPY --chown=mcp:mcp --from=builder /build/README.md ./
+# Propagate playground/ from the builder into the runtime image at
+# /app/playground/. web/playground/router.py reads
+# /app/playground/static and /app/playground/templates via static_dir()
+# and templates_dir() which walk parents[5] from the package source.
+COPY --chown=mcp:mcp --from=builder /build/playground ./playground
 
 # Copy the baked index. The preindex step above always produces
 # /build/data/index.sqlite (real OR empty), so a plain COPY works.

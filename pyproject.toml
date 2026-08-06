@@ -115,6 +115,9 @@ ignore = [
 "tests/integration/test_docker_size.py" = [
     "S607",  # subprocess for docker is fixed
 ]
+"tests/integration/test_docker_playground.py" = [
+    "S607",  # subprocess for docker is fixed
+]  
 
 [tool.ruff.format]
 quote-style = "double"
