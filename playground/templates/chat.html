@@ -96,6 +96,16 @@
     const DONE = "[DONE]";
     const ERROR = "[ERROR]";
 
+    // Persistence caps. Every /chat/stream POST ships the FULL
+    // ``messages`` array as input to Gemini, so an unbounded history
+    // blows up both localStorage (per-tab) and per-request token cost
+    // (per-recruiter). The recruiter-demo scope is ~15 user/assistant
+    // turns; 30 messages / 8000 chars leaves comfortable headroom while
+    // staying well under the Gemini free-tier per-minute budget.
+    // ``appendToHistory`` enforces both caps on every save.
+    var MAX_HISTORY_MESSAGES = 30;
+    var MAX_HISTORY_CHARS = 8000;
+
     var transcript = document.getElementById("chat-transcript");
     var form = document.getElementById("chat-form");
     var input = document.getElementById("chat-input");
@@ -414,6 +424,17 @@
     function appendToHistory(role, content) {
         var messages = loadHistory();
         messages.push({ role: role, content: content });
+        // Trim from the front (oldest) until both caps are satisfied.
+        // ``messages.length > 1`` guards against a single oversized
+        // message emptying the entire transcript — the most recent
+        // turn always survives even if it alone blows past the char cap.
+        while (
+            (messages.length > MAX_HISTORY_MESSAGES ||
+             JSON.stringify(messages).length > MAX_HISTORY_CHARS) &&
+            messages.length > 1
+        ) {
+            messages.shift();
+        }
         saveHistory(messages);
     }
 
@@ -437,6 +458,11 @@
         input.value = "";
         resizeInput();
         input.focus();
+        // Persist the user message BEFORE the fetch fires so the
+        // question survives a refresh mid-stream (or after a typed
+        // error). The assistant message is persisted on sawDone; user
+        // messages are persisted optimistically here.
+        appendToHistory("user", text);
         var assistantAcc = "";
         var assistantNode = renderMessage("assistant", "", true);
         var assistantContent = assistantNode.querySelector(".chat-message__content");

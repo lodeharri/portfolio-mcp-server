@@ -436,6 +436,182 @@ class TestGetChatPage:
         assert "catch" in body
 
     @pytest.mark.asyncio
+    async def test_get_chat_caps_persisted_history_with_message_and_char_limits(
+        self, chat_router
+    ) -> None:
+        """The inline script MUST cap the persisted history to bound
+        localStorage growth AND per-request input-token cost.
+
+        Every ``/chat/stream`` POST sends the FULL ``messages`` array,
+        so an unbounded history means unbounded Gemini input tokens on
+        every recruiter follow-up. The fix is two module-level caps
+        enforced inside ``appendToHistory`` before the write:
+
+          * ``MAX_HISTORY_MESSAGES`` — message-count cap (default 30)
+          * ``MAX_HISTORY_CHARS``    — char-count cap on the serialized
+                                       JSON (default 8000)
+
+        When EITHER cap is exceeded the script trims from the front
+        (FIFO) until both caps are satisfied. The ``appendToHistory``
+        function MUST be the single chokepoint that applies both caps
+        — the smoke test asserts the JS markers, not the runtime
+        behavior (Playwright e2e is the right venue for runtime
+        coverage of the trim loop).
+
+        Trimming from the front (oldest messages) is mandatory: a
+        recruiter's most recent question is the one they care about
+        keeping across a refresh; old context is exactly what they
+        want to forget. Silently trimming — no UI banner — is the
+        intended UX.
+        """
+        import re
+
+        app = _make_app(chat_router)
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://testserver"
+        ) as client:
+            response = await client.get("/chat")
+        body = response.text
+
+        script_match = re.search(r"<script>(.*?)</script>", body, re.DOTALL)
+        assert script_match, "chat page must include an inline <script> block"
+        script = script_match.group(1)
+
+        # Message-count cap constant MUST be declared at module scope so
+        # ``appendToHistory`` can read it.
+        assert "MAX_HISTORY_MESSAGES" in script, (
+            "chat.html must declare a MAX_HISTORY_MESSAGES constant; "
+            "without it, localStorage grows unbounded per session and "
+            "every /chat/stream POST ships the entire history as input "
+            "tokens to Gemini."
+        )
+
+        # Char-count cap constant MUST be declared at module scope.
+        assert "MAX_HISTORY_CHARS" in script, (
+            "chat.html must declare a MAX_HISTORY_CHARS constant; "
+            "message-count alone is not enough — a single huge response "
+            "can blow past the count cap in characters and still cost "
+            "real money on Gemini's per-token billing."
+        )
+
+        # Locate appendToHistory so we can assert the trim loop lives
+        # INSIDE it (the cap is enforced on every save, not only on
+        # load). We anchor on the signature the existing implementation
+        # uses.
+        append_match = re.search(
+            r"function\s+appendToHistory\s*\([^)]*\)\s*\{(.*?)^\s*\}",
+            script,
+            re.DOTALL | re.MULTILINE,
+        )
+        assert append_match, "appendToHistory function not found in chat.html"
+        append_body = append_match.group(1)
+
+        # The trim-from-front helper MUST be reachable from appendToHistory
+        # — ``messages.shift()`` is the simplest FIFO pop. We assert the
+        # call exists inside the function body so it actually runs on
+        # every save.
+        assert "messages.shift" in append_body, (
+            "appendToHistory must call messages.shift() to drop the "
+            "oldest message when either cap is exceeded; trimming from "
+            "the back would discard the recruiter's most recent question."
+        )
+
+        # The guard ``messages.length > 1`` MUST appear alongside the
+        # trim loop so a single oversized message can never empty the
+        # history completely. This is the silent-fail safe path.
+        assert "messages.length > 1" in append_body, (
+            "appendToHistory's trim loop must guard with messages.length > 1; "
+            "without the guard a single >8000-char assistant reply would "
+            "delete the entire transcript and break refresh-restore."
+        )
+
+        # The cap constants MUST be referenced from the trim condition
+        # itself — declaring them at the top and never using them is the
+        # exact failure mode this test guards against.
+        assert "MAX_HISTORY_MESSAGES" in append_body, (
+            "MAX_HISTORY_MESSAGES must be referenced inside appendToHistory's "
+            "trim condition; a declaration-without-use is not a cap."
+        )
+        assert "MAX_HISTORY_CHARS" in append_body, (
+            "MAX_HISTORY_CHARS must be referenced inside appendToHistory's "
+            "trim condition; a declaration-without-use is not a cap."
+        )
+
+    @pytest.mark.asyncio
+    async def test_get_chat_persists_user_message_on_send(self, chat_router) -> None:
+        """The inline script MUST call ``appendToHistory("user", ...)``
+        inside ``sendMessage`` so user questions survive a refresh.
+
+        Bug 2 of the work item: the user message was rendered into the
+        transcript (``renderMessage("user", text, false)``) but NEVER
+        persisted. Only the assistant message reached ``appendToHistory``
+        (in the ``sawDone`` branch). On a refresh, ``renderHistory`` only
+        loaded what was persisted — so the recruiter's question
+        vanished, even though the server still had it (it had been
+        POSTed to ``/chat/stream``). The fix persists the user message
+        BEFORE the request fires, so even an error mid-stream leaves the
+        question recoverable on the next page load.
+        """
+        import re
+
+        app = _make_app(chat_router)
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://testserver"
+        ) as client:
+            response = await client.get("/chat")
+        body = response.text
+
+        script_match = re.search(r"<script>(.*?)</script>", body, re.DOTALL)
+        assert script_match, "chat page must include an inline <script> block"
+        script = script_match.group(1)
+
+        # Anchor on the renderMessage call for the user message — the
+        # persist call MUST come AFTER it (so the optimistic UI render
+        # still happens, and the persist happens before the fetch
+        # fires). Same anchor style as the clear-input test above.
+        render_user_idx = script.index('renderMessage("user", text, false);')
+
+        # The persist call MUST appear somewhere between the user
+        # message render and the sawDone branch (i.e. it must run as
+        # part of the optimistic-UI path, NOT inside the success branch
+        # where it would only fire if the stream completed cleanly).
+        append_user_idx = script.find(
+            'appendToHistory("user", text)', render_user_idx
+        )
+        assert append_user_idx != -1, (
+            "sendMessage must call appendToHistory('user', text) AFTER "
+            "renderMessage('user', text, false); otherwise a refresh "
+            "during streaming (or on error) loses the recruiter's question. "
+            "Only the assistant message was being persisted — bug 2."
+        )
+
+        # And it MUST run BEFORE the fetch (the persist-then-request
+        # ordering is what guarantees survival on network drops). The
+        # ``fetch(STREAM_URL`` call is the obvious boundary.
+        fetch_idx = script.find("fetch(STREAM_URL", render_user_idx)
+        assert fetch_idx != -1, "sendMessage must issue a fetch to /chat/stream"
+        assert append_user_idx < fetch_idx, (
+            "appendToHistory('user', text) must run BEFORE the fetch fires; "
+            "otherwise a fast failure (network drop, typed error) leaves "
+            "no record of the question in localStorage."
+        )
+
+        # And it MUST NOT live inside the sawDone branch — that would
+        # only persist on success, which is the original bug. We use
+        # the same index-based scoping as
+        # ``test_get_chat_clears_input_immediately_on_send``.
+        saw_done_idx = script.find("if (sawDone)")
+        assert saw_done_idx != -1, "sendMessage must have a sawDone branch"
+        saw_done_close_idx = script.find("} else {", saw_done_idx)
+        assert saw_done_close_idx != -1, "sawDone branch must have a sibling else"
+        saw_done_block = script[saw_done_idx:saw_done_close_idx]
+        assert 'appendToHistory("user", text)' not in saw_done_block, (
+            "appendToHistory('user', text) must NOT live inside the sawDone "
+            "success branch — the original bug only persisted on success; "
+            "the fix persists optimistically BEFORE the request fires."
+        )
+
+    @pytest.mark.asyncio
     async def test_get_chat_sends_full_messages_array_in_post(self, chat_router) -> None:
         """The inline script MUST POST the full ``messages`` array.
 
