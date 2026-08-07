@@ -18,12 +18,8 @@ from pathlib import Path
 
 import pytest
 
-PLAYGROUND_TEMPLATES_DIR = (
-    Path(__file__).resolve().parents[5] / "playground" / "templates"
-)
-PLAYGROUND_STATIC_DIR = (
-    Path(__file__).resolve().parents[5] / "playground" / "static"
-)
+PLAYGROUND_TEMPLATES_DIR = Path(__file__).resolve().parents[5] / "playground" / "templates"
+PLAYGROUND_STATIC_DIR = Path(__file__).resolve().parents[5] / "playground" / "static"
 
 
 # ---------------------------------------------------------------------------
@@ -85,9 +81,7 @@ def chat_client_factory(chat_router):
     )
 
     class _StubAskPortfolio:
-        async def astream(
-            self, request: AskPortfolioRequest
-        ) -> AsyncIterator[AskPortfolioChunk]:
+        async def astream(self, request: AskPortfolioRequest) -> AsyncIterator[AskPortfolioChunk]:
             yield AskPortfolioChunk(
                 kind="done",
                 result=AskPortfolioResult(answer="ok"),
@@ -101,9 +95,7 @@ def chat_client_factory(chat_router):
         app = FastAPI()
         app.state.composition = _StubComposition()  # type: ignore[attr-defined]
         app.include_router(chat_router)
-        return AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://testserver"
-        )
+        return AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver")
 
     return _build
 
@@ -125,9 +117,7 @@ class TestFooterRemoval:
     MUST also be removed (no longer used by any template).
     """
 
-    def test_base_template_does_not_render_tech_stack_footer(
-        self, web_client: object
-    ) -> None:
+    def test_base_template_does_not_render_tech_stack_footer(self, web_client: object) -> None:
         """GET / extends base.html; the rendered HTML MUST NOT contain
         the "Built with FastAPI + HTMX + Jinja2 + the 5-layer security model"
         string that lived in the base.html footer.
@@ -157,9 +147,7 @@ class TestFooterRemoval:
             "(the footer block was removed from base.html)"
         )
 
-    def test_index_template_does_not_render_mcp_transport_footer(
-        self, web_client: object
-    ) -> None:
+    def test_index_template_does_not_render_mcp_transport_footer(self, web_client: object) -> None:
         """GET / (index.html) MUST NOT contain the "MCP transport ... live at /mcp"
         footer text. That copy advertises the raw JSON-RPC transport to
         recruiters, who can't actually use it from a browser (the
@@ -235,14 +223,13 @@ class TestMcpNavLinkRemoval:
         assert nav_match, "base.html must render a <nav> block"
         nav_body = nav_match.group(1)
         assert 'href="/mcp"' not in nav_body, (
-            "the nav still contains a <a href=\"/mcp\">MCP endpoint</a> "
+            'the nav still contains a <a href="/mcp">MCP endpoint</a> '
             "link that returns 406 in browsers; remove it (browser "
             "users should use /mcp-ui instead)"
         )
         # Sanity: the browser-friendly alternative is still present.
         assert 'href="/mcp-ui"' in nav_body, (
-            "the nav must still link to /mcp-ui (the browser-friendly "
-            "JSON-RPC UI)"
+            "the nav must still link to /mcp-ui (the browser-friendly JSON-RPC UI)"
         )
 
     def test_nav_block_in_base_template_does_not_mention_mcp_endpoint_string(
@@ -281,7 +268,7 @@ class TestBaseTemplateSpanishTranslation:
         """
         text = web_client.get("/").text  # type: ignore[attr-defined]
         assert re.search(r'<html\s+lang="es"', text), (
-            "base.html must declare <html lang=\"es\">; the portfolio "
+            'base.html must declare <html lang="es">; the portfolio '
             "is targeted at Spanish-speaking recruiters"
         )
 
@@ -291,9 +278,7 @@ class TestBaseTemplateSpanishTranslation:
         nav_match = re.search(r"<nav\b[^>]*>(.*?)</nav>", text, re.DOTALL)
         assert nav_match, "base.html must render a <nav> block"
         nav_body = nav_match.group(1)
-        assert ">Inicio<" in nav_body, (
-            "the Home nav link must read 'Inicio' (Spanish for Home)"
-        )
+        assert ">Inicio<" in nav_body, "the Home nav link must read 'Inicio' (Spanish for Home)"
 
     def test_playground_nav_link_label_kept(self, web_client: object) -> None:
         """The Playground nav link MUST keep the "Playground" term — it's
@@ -308,21 +293,16 @@ class TestBaseTemplateSpanishTranslation:
             "(recognized loanword in Spanish dev vocabulary)"
         )
 
-    def test_mcp_browser_nav_link_label_is_explorador_mcp(
-        self, web_client: object
-    ) -> None:
+    def test_mcp_browser_nav_link_label_is_explorador_mcp(self, web_client: object) -> None:
         """The MCP browser nav link MUST read "Explorador MCP" in Spanish."""
         text = web_client.get("/").text  # type: ignore[attr-defined]
         nav_match = re.search(r"<nav\b[^>]*>(.*?)</nav>", text, re.DOTALL)
         nav_body = nav_match.group(1)
         assert "Explorador MCP" in nav_body, (
-            "the MCP browser nav link must read 'Explorador MCP' "
-            "(Spanish for 'MCP explorer')"
+            "the MCP browser nav link must read 'Explorador MCP' (Spanish for 'MCP explorer')"
         )
 
-    def test_sidebar_project_name_kept_as_proper_noun(
-        self, web_client: object
-    ) -> None:
+    def test_sidebar_project_name_kept_as_proper_noun(self, web_client: object) -> None:
         """The sidebar project name ``portfolio-mcp-server`` is a proper
         noun (the project name) and MUST stay in English.
         """
@@ -354,9 +334,7 @@ class TestIndexPageSpanishTranslation:
             "Servidor MCP de Portfolio' in Spanish"
         )
 
-    def test_indexed_projects_section_heading_is_spanish(
-        self, web_client: object
-    ) -> None:
+    def test_indexed_projects_section_heading_is_spanish(self, web_client: object) -> None:
         """The 'Indexed projects' h2 MUST be translated to 'Proyectos indexados'."""
         text = web_client.get("/").text  # type: ignore[attr-defined]
         assert "Proyectos indexados" in text, (
@@ -366,21 +344,15 @@ class TestIndexPageSpanishTranslation:
             "the English 'Indexed projects' heading must be removed"
         )
 
-    def test_per_project_chunk_count_label_is_spanish(
-        self, web_client: object
-    ) -> None:
+    def test_per_project_chunk_count_label_is_spanish(self, web_client: object) -> None:
         """The per-project chunk count label MUST read 'chunks indexados'."""
         text = web_client.get("/").text  # type: ignore[attr-defined]
         assert "chunks indexados" in text, (
             "the per-project chunk count label must read 'chunks indexados' (Spanish)"
         )
-        assert "indexed chunks" not in text, (
-            "the English 'indexed chunks' label must be removed"
-        )
+        assert "indexed chunks" not in text, "the English 'indexed chunks' label must be removed"
 
-    def test_per_project_open_in_playground_link_is_spanish(
-        self, web_client: object
-    ) -> None:
+    def test_per_project_open_in_playground_link_is_spanish(self, web_client: object) -> None:
         """The per-project 'open in playground' link MUST be translated."""
         text = web_client.get("/").text  # type: ignore[attr-defined]
         assert "abrir en playground" in text, (
@@ -394,10 +366,7 @@ class TestIndexPageSpanishTranslation:
         """The 'No projects declared in the manifest yet.' empty-state
         message MUST be translated to 'Aún no hay proyectos en el manifesto.'.
         """
-        template_text = (
-            PLAYGROUND_TEMPLATES_DIR.joinpath("index.html")
-            .read_text(encoding="utf-8")
-        )
+        template_text = PLAYGROUND_TEMPLATES_DIR.joinpath("index.html").read_text(encoding="utf-8")
         # Template-level check (the empty branch is rendered only when
         # the manifest is empty; the renderer may not exercise it in
         # this fixture).
@@ -460,9 +429,7 @@ class TestPlaygroundPageSpanishTranslation:
         text = web_client.get("/playground").text  # type: ignore[attr-defined]
         # The Search button is the only standalone "Buscar" string;
         # the section h2 "search_code" still contains the API name.
-        assert ">Buscar<" in text, (
-            "playground.html search_code button must read 'Buscar'"
-        )
+        assert ">Buscar<" in text, "playground.html search_code button must read 'Buscar'"
 
     def test_explain_button_label_is_spanish(self, web_client: object) -> None:
         text = web_client.get("/playground").text  # type: ignore[attr-defined]
@@ -472,30 +439,23 @@ class TestPlaygroundPageSpanishTranslation:
 
     def test_summarize_button_label_is_spanish(self, web_client: object) -> None:
         text = web_client.get("/playground").text  # type: ignore[attr-defined]
-        assert ">Resumir<" in text, (
-            "playground.html summarize_readme button must read 'Resumir'"
-        )
+        assert ">Resumir<" in text, "playground.html summarize_readme button must read 'Resumir'"
 
     def test_render_diagram_button_label_is_spanish(self, web_client: object) -> None:
         text = web_client.get("/playground").text  # type: ignore[attr-defined]
         assert "Renderizar diagrama" in text, (
-            "playground.html get_architecture_diagram button must read "
-            "'Renderizar diagrama'"
+            "playground.html get_architecture_diagram button must read 'Renderizar diagrama'"
         )
 
     def test_ask_portfolio_button_label_is_spanish(self, web_client: object) -> None:
         text = web_client.get("/playground").text  # type: ignore[attr-defined]
-        assert "Preguntar" in text, (
-            "playground.html ask_portfolio button must read 'Preguntar →'"
-        )
+        assert "Preguntar" in text, "playground.html ask_portfolio button must read 'Preguntar →'"
 
     def test_query_field_label_is_spanish(self, web_client: object) -> None:
         text = web_client.get("/playground").text  # type: ignore[attr-defined]
         # The <label for="search_code-query"> query </label> tag pattern
         # — assert the visible label text is "consulta".
-        assert (
-            "consulta" in text
-        ), "playground.html search_code field label must read 'consulta'"
+        assert "consulta" in text, "playground.html search_code field label must read 'consulta'"
 
     def test_project_id_field_label_is_spanish(self, web_client: object) -> None:
         text = web_client.get("/playground").text  # type: ignore[attr-defined]
@@ -510,9 +470,7 @@ class TestPlaygroundPageSpanishTranslation:
         for 'live' — clearer for recruiters than the loanword 'streaming').
         """
         text = web_client.get("/playground").text  # type: ignore[attr-defined]
-        assert "en vivo" in text, (
-            "the ask_portfolio streaming badge must read 'en vivo' (Spanish)"
-        )
+        assert "en vivo" in text, "the ask_portfolio streaming badge must read 'en vivo' (Spanish)"
 
 
 class TestChatPageSpanishTranslation:
@@ -559,9 +517,7 @@ class TestChatPageSpanishTranslation:
     async def test_send_button_label_is_spanish(self, chat_client_factory) -> None:
         async with chat_client_factory() as client:
             response = await client.get("/chat")
-        assert ">Enviar<" in response.text, (
-            "chat.html submit button must read 'Enviar' (Spanish)"
-        )
+        assert ">Enviar<" in response.text, "chat.html submit button must read 'Enviar' (Spanish)"
 
     @pytest.mark.asyncio
     async def test_input_meta_hint_is_spanish(self, chat_client_factory) -> None:
@@ -668,20 +624,15 @@ class TestMcpBrowserPageSpanishTranslation:
     def test_quick_reference_heading_is_spanish(self, web_client: object) -> None:
         text = web_client.get("/mcp-ui").text  # type: ignore[attr-defined]
         assert "Referencia rápida" in text, (
-            "mcp_browser.html quick-reference section must read "
-            "'Referencia rápida' (Spanish)"
+            "mcp_browser.html quick-reference section must read 'Referencia rápida' (Spanish)"
         )
 
-    def test_server_protocol_tools_labels_are_spanish(
-        self, web_client: object
-    ) -> None:
+    def test_server_protocol_tools_labels_are_spanish(self, web_client: object) -> None:
         """Server / Protocol / Tools labels MUST be translated:
         Server → Servidor, Protocol → Protocolo, Tools → Herramientas.
         """
         text = web_client.get("/mcp-ui").text  # type: ignore[attr-defined]
-        assert "Servidor:" in text, (
-            "mcp_browser.html Server label must read 'Servidor:' (Spanish)"
-        )
+        assert "Servidor:" in text, "mcp_browser.html Server label must read 'Servidor:' (Spanish)"
         assert "Protocolo:" in text, (
             "mcp_browser.html Protocol label must read 'Protocolo:' (Spanish)"
         )
@@ -702,8 +653,7 @@ class TestMcpBrowserPageSpanishTranslation:
         """
         text = web_client.get("/mcp-ui").text  # type: ignore[attr-defined]
         assert "inputSchema en bruto" in text, (
-            "mcp_browser.html raw inputSchema summary must read "
-            "'inputSchema en bruto' (Spanish)"
+            "mcp_browser.html raw inputSchema summary must read 'inputSchema en bruto' (Spanish)"
         )
 
     def test_placeholder_result_text_is_spanish(self, web_client: object) -> None:
@@ -717,15 +667,12 @@ class TestMcpBrowserPageSpanishTranslation:
             "'Envía el formulario de arriba para llamar esta herramienta.' (Spanish)"
         )
 
-    def test_enumerate_tools_error_message_is_spanish(
-        self, web_client: object
-    ) -> None:
+    def test_enumerate_tools_error_message_is_spanish(self, web_client: object) -> None:
         """The 'Could not enumerate tools:' error message MUST be translated
         to 'No se pudieron enumerar las herramientas:'.
         """
-        template_text = (
-            PLAYGROUND_TEMPLATES_DIR.joinpath("mcp_browser.html")
-            .read_text(encoding="utf-8")
+        template_text = PLAYGROUND_TEMPLATES_DIR.joinpath("mcp_browser.html").read_text(
+            encoding="utf-8"
         )
         assert "No se pudieron enumerar las herramientas:" in template_text, (
             "mcp_browser.html must declare the Spanish error message "
@@ -740,6 +687,184 @@ class TestMcpBrowserPageSpanishTranslation:
         assert "Llamando " in text, (
             "mcp_browser.html inline client must surface 'Llamando {name}…' "
             "(Spanish for 'Calling {name}…')"
+        )
+
+
+class TestMcpBrowserRenderedToolForms:
+    """End-to-end render checks for /mcp-ui. Each tool exposed by the
+    FastMCP composition root MUST render its own form with Spanish
+    tool description, Spanish field labels and editable native input
+    elements for required fields.
+
+    This is the integration check for the
+    ``mcp-ui-spanish-override`` change: the Python serializer
+    (``mcp_browser._serialize_tools``) must read the FastMCP 3.4.6
+    ``.parameters`` attribute and the Spanish override map must be
+    applied end-to-end on the rendered HTML.
+    """
+
+    @pytest.fixture
+    def mcp_ui_text(self, web_client: object) -> str:
+        return web_client.get("/mcp-ui").text  # type: ignore[attr-defined]
+
+    @staticmethod
+    def _extract_tool_section(html: str, tool_name: str) -> str:
+        """Return the <section data-tool-name="<tool>">…</section>
+        block (greedy match until the next section or end of body).
+        """
+        match = re.search(
+            rf'<section[^>]*data-tool-name="{re.escape(tool_name)}".*?</section>',
+            html,
+            flags=re.DOTALL,
+        )
+        assert match, f"/mcp-ui response must render a <section> for tool {tool_name!r}"
+        return match.group(0)
+
+    @pytest.mark.parametrize(
+        "tool_name,expected_description_fragment",
+        [
+            (
+                "list_projects",
+                "Lista los proyectos del portfolio",
+            ),
+            (
+                "search_code",
+                "Búsqueda semántica sobre los chunks de código",
+            ),
+            (
+                "explain_architecture",
+                "Resume la arquitectura de un proyecto",
+            ),
+            (
+                "summarize_readme",
+                "Resume el README de un proyecto",
+            ),
+            (
+                "get_architecture_diagram",
+                "Devuelve el diagrama de arquitectura",
+            ),
+            (
+                "ask_portfolio",
+                "Pregunta libre sobre el portfolio",
+            ),
+        ],
+    )
+    def test_tool_description_is_spanish(
+        self,
+        mcp_ui_text: str,
+        tool_name: str,
+        expected_description_fragment: str,
+    ) -> None:
+        """Every tool's <p> description MUST be Spanish (the override
+        map wins over the English docstring). This is the recruiter-
+        facing copy; English would be a regression.
+        """
+        section = self._extract_tool_section(mcp_ui_text, tool_name)
+        # The description sits inside the first <p> after the <h2>.
+        desc_match = re.search(r"<h2>[^<]*</h2>\s*<p>(.*?)</p>", section, re.DOTALL)
+        assert desc_match, f"{tool_name} section must render a <p> description right after <h2>"
+        assert expected_description_fragment in desc_match.group(1), (
+            f"{tool_name} description must be Spanish; expected fragment "
+            f"{expected_description_fragment!r}, got {desc_match.group(1)!r}"
+        )
+
+    @pytest.mark.parametrize(
+        "tool_name,expected_field_labels",
+        [
+            ("search_code", ["Consulta", "Cantidad de resultados", "ID del proyecto"]),
+            ("explain_architecture", ["ID del proyecto", "Tokens máximos"]),
+            ("summarize_readme", ["ID del proyecto", "Tokens máximos"]),
+            ("get_architecture_diagram", ["ID del proyecto"]),
+            ("ask_portfolio", ["Pregunta", "ID de conversación"]),
+        ],
+    )
+    def test_field_labels_are_spanish(
+        self,
+        mcp_ui_text: str,
+        tool_name: str,
+        expected_field_labels: list[str],
+    ) -> None:
+        """Every required (and optional) field on the rendered form
+        MUST show its Spanish label. Confirms the per-field override
+        map is being applied during _serialize_tools.
+        """
+        section = self._extract_tool_section(mcp_ui_text, tool_name)
+        for label in expected_field_labels:
+            assert label in section, (
+                f"{tool_name} form must render the Spanish field label "
+                f"{label!r}; section body was:\n{section[:600]}"
+            )
+
+    def test_search_code_required_field_has_editable_input(self, mcp_ui_text: str) -> None:
+        """The required `query` field on search_code MUST render an
+        editable <input type="text" required> — not a textarea, not a
+        disabled field. This is the bug regression guard: pre-fix the
+        whole form showed the "No hay campos declarados" fallback.
+        """
+        section = self._extract_tool_section(mcp_ui_text, "search_code")
+        # Look for the required text input for the `query` field.
+        input_match = re.search(
+            r'<input[^>]*type="text"[^>]*name="query"[^>]*>',
+            section,
+            flags=re.DOTALL,
+        )
+        assert input_match, (
+            'search_code form MUST render a native <input type="text" '
+            'name="query"> — the bug was empty fields, the fix exposes them'
+        )
+        attrs = input_match.group(0)
+        assert "required" in attrs, (
+            "the search_code `query` input must declare `required` "
+            "(it's a required field per the schema)"
+        )
+
+    @pytest.mark.parametrize(
+        "tool_name,required_field_name",
+        [
+            ("search_code", "query"),
+            ("explain_architecture", "project_id"),
+            ("summarize_readme", "project_id"),
+            ("get_architecture_diagram", "project_id"),
+            ("ask_portfolio", "question"),
+        ],
+    )
+    def test_required_field_renders_editable_input(
+        self,
+        mcp_ui_text: str,
+        tool_name: str,
+        required_field_name: str,
+    ) -> None:
+        """The required field on each tool MUST render as an editable
+        <input>. Pre-fix the page showed the "No hay campos declarados"
+        placeholder for every tool except list_projects. Post-fix every
+        tool with fields shows them as native inputs.
+        """
+        section = self._extract_tool_section(mcp_ui_text, tool_name)
+        input_match = re.search(
+            rf'<input[^>]*name="{re.escape(required_field_name)}"[^>]*>',
+            section,
+            flags=re.DOTALL,
+        )
+        assert input_match, (
+            f"{tool_name} form must render an editable <input> for its "
+            f"required field {required_field_name!r} (got section:\n"
+            f"{section[:800]})"
+        )
+        assert "required" in input_match.group(0), (
+            f"{tool_name} {required_field_name} input must declare `required` per the schema"
+        )
+
+    def test_list_projects_renders_no_field_placeholder(self, mcp_ui_text: str) -> None:
+        """list_projects has no fields per the schema, so it MUST
+        render the existing "No hay campos declarados" placeholder —
+        this confirms the empty-schema path still works post-fix
+        (regression guard for the back-compat branch).
+        """
+        section = self._extract_tool_section(mcp_ui_text, "list_projects")
+        assert "No hay campos declarados" in section, (
+            "list_projects has no fields and must render the empty-form "
+            "placeholder; this guards against accidentally synthesising "
+            "fake fields when the schema is empty"
         )
 
 
@@ -765,9 +890,7 @@ class TestChatComposerBottomMargin:
         # Pull the .chat-form rule body and check for a bottom margin
         # declaration. The rule must be non-empty (a class with no
         # declarations is dead code).
-        form_match = re.search(
-            r"\.chat-form\s*\{([^}]*)\}", css, flags=re.DOTALL
-        )
+        form_match = re.search(r"\.chat-form\s*\{([^}]*)\}", css, flags=re.DOTALL)
         assert form_match, (
             "style.css must define a .chat-form rule; the chat composer's "
             "visual layout depends on it"
@@ -780,9 +903,7 @@ class TestChatComposerBottomMargin:
         # Accept either margin-bottom or padding-bottom. Both are
         # valid visual fixes — the spec says "use whatever looks
         # balanced".
-        assert re.search(r"margin-bottom\s*:", body) or re.search(
-            r"padding-bottom\s*:", body
-        ), (
+        assert re.search(r"margin-bottom\s*:", body) or re.search(r"padding-bottom\s*:", body), (
             "style.css's .chat-form rule must have a margin-bottom or "
             "padding-bottom declaration so the composer has breathing room"
         )
@@ -794,17 +915,14 @@ class TestChatComposerBottomMargin:
         """
         css_path = PLAYGROUND_STATIC_DIR / "style.css"
         css = css_path.read_text(encoding="utf-8")
-        form_match = re.search(
-            r"\.chat-form\s*\{([^}]*)\}", css, flags=re.DOTALL
-        )
+        form_match = re.search(r"\.chat-form\s*\{([^}]*)\}", css, flags=re.DOTALL)
         assert form_match, "style.css must define a .chat-form rule"
         body = form_match.group(1)
         # Extract any margin-bottom or padding-bottom declaration.
         margin_m = re.search(r"margin-bottom\s*:\s*([^;]+);", body)
         padding_m = re.search(r"padding-bottom\s*:\s*([^;]+);", body)
         assert margin_m or padding_m, (
-            "style.css's .chat-form rule must declare a margin-bottom "
-            "or padding-bottom"
+            "style.css's .chat-form rule must declare a margin-bottom or padding-bottom"
         )
         # Convert the value to a number and assert > 0.
         for m in (margin_m, padding_m):
@@ -814,8 +932,7 @@ class TestChatComposerBottomMargin:
             # Strip trailing CSS units (rem, em, px).
             numeric = re.match(r"^(-?\d+\.?\d*)", raw)
             assert numeric, (
-                f"could not parse margin/padding value {raw!r}; "
-                "use a CSS length (rem, em, px)"
+                f"could not parse margin/padding value {raw!r}; use a CSS length (rem, em, px)"
             )
             assert float(numeric.group(1)) > 0, (
                 f"chat-form margin/padding-bottom must be > 0; got {raw!r}"
@@ -835,9 +952,7 @@ class TestChatClearHistoryButton:
     """
 
     @pytest.mark.asyncio
-    async def test_clear_history_button_is_rendered_in_chat_html(
-        self, chat_client_factory
-    ) -> None:
+    async def test_clear_history_button_is_rendered_in_chat_html(self, chat_client_factory) -> None:
         """chat.html MUST render a clear-history button with a stable
         marker id (``chat-clear``) AND a Spanish label ("Limpiar" or
         "Borrar historial").
@@ -849,16 +964,16 @@ class TestChatClearHistoryButton:
         # accept either an id="chat-clear" attribute or a
         # class="chat-clear" attribute (the spec offers both; the
         # minimum contract is "a clear-history button is identifiable").
-        assert (
-            'id="chat-clear"' in body
-        ), "chat.html must render a clear-history button with id=\"chat-clear\""
-        assert (
-            'class="chat-clear"' in body
-        ), "chat.html must render a clear-history button with class=\"chat-clear\""
+        assert 'id="chat-clear"' in body, (
+            'chat.html must render a clear-history button with id="chat-clear"'
+        )
+        assert 'class="chat-clear"' in body, (
+            'chat.html must render a clear-history button with class="chat-clear"'
+        )
         # The button's text MUST be in Spanish ("Limpiar" or "Borrar historial").
-        assert (
-            "Limpiar" in body or "Borrar historial" in body
-        ), "the clear-history button label must be in Spanish ('Limpiar' or 'Borrar historial')"
+        assert "Limpiar" in body or "Borrar historial" in body, (
+            "the clear-history button label must be in Spanish ('Limpiar' or 'Borrar historial')"
+        )
 
     @pytest.mark.asyncio
     async def test_clear_history_js_handler_is_wired(self, chat_client_factory) -> None:
@@ -875,26 +990,25 @@ class TestChatClearHistoryButton:
         script = script_match.group(1)
 
         # The clearHistory function MUST be defined.
-        assert re.search(
-            r"function\s+clearHistory\s*\(", script
-        ), "chat.html must define a clearHistory() function"
+        assert re.search(r"function\s+clearHistory\s*\(", script), (
+            "chat.html must define a clearHistory() function"
+        )
         # The handler MUST wipe localStorage (remove the historyKey entry).
         assert "removeItem" in script, (
-            "clearHistory() must call localStorage.removeItem to wipe "
-            "the persisted history"
+            "clearHistory() must call localStorage.removeItem to wipe the persisted history"
         )
         # The handler MUST clear the transcript DOM.
         assert "transcript" in script, (
             "clearHistory() must reach the transcript element to clear it"
         )
         # The handler MUST be wired to the button via addEventListener.
-        assert (
-            "addEventListener" in script
-        ), "the clear-history button must be wired via addEventListener"
+        assert "addEventListener" in script, (
+            "the clear-history button must be wired via addEventListener"
+        )
         # The confirm() call MUST be in Spanish ("Borrar" or "¿").
-        assert (
-            "¿Borrar" in script and "?" in script
-        ), "clearHistory() must prompt the user in Spanish before wiping"
+        assert "¿Borrar" in script and "?" in script, (
+            "clearHistory() must prompt the user in Spanish before wiping"
+        )
 
     def test_css_defines_chat_clear_button_rule(self) -> None:
         """style.css MUST define a ``.chat-clear`` rule for the new
@@ -904,17 +1018,13 @@ class TestChatClearHistoryButton:
         """
         css_path = PLAYGROUND_STATIC_DIR / "style.css"
         css = css_path.read_text(encoding="utf-8")
-        rule_match = re.search(
-            r"\.chat-clear\s*\{([^}]*)\}", css, flags=re.DOTALL
-        )
+        rule_match = re.search(r"\.chat-clear\s*\{([^}]*)\}", css, flags=re.DOTALL)
         assert rule_match, (
-            "style.css must define a .chat-clear rule for the new "
-            "clear-history button"
+            "style.css must define a .chat-clear rule for the new clear-history button"
         )
         body = rule_match.group(1).strip()
         assert body, (
-            "style.css's .chat-clear rule is empty; the visual style "
-            "is part of the contract"
+            "style.css's .chat-clear rule is empty; the visual style is part of the contract"
         )
         # Palette discipline: the border MUST use the existing
         # --solar-cyan accent (no new colors per the change rules).
