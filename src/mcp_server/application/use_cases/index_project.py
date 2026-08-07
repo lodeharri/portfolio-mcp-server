@@ -142,8 +142,17 @@ class IndexProjectUseCase:
     # Public API
     # ------------------------------------------------------------------
 
-    def execute(self, project_id: str) -> IndexResult:
+    def execute(
+        self, project_id: str, *, limit_files: int | None = None
+    ) -> IndexResult:
         """Run the preindex pipeline for one declared project.
+
+        Args:
+            project_id: Which project to index (from the manifest).
+            limit_files: If set, stop after this many NEW chunks
+                (cache-hits don't count). Useful for quota-bounded
+                runs on free tiers: resume after a rate-limit hit
+                without burning quota on already-indexed content.
 
         Returns:
             :class:`IndexResult` with the per-run counters. The CLI
@@ -157,7 +166,10 @@ class IndexProjectUseCase:
         self._embed_call_count = 0
         self._audit("info", "project.start", project_id=project_id)
 
+        limit_reached = False
         for file_path in self._walk_project(project):
+            if limit_reached:
+                break
             result.processed += 1
             try:
                 content = file_path.read_text(encoding="utf-8")
@@ -225,6 +237,18 @@ class IndexProjectUseCase:
                 )
                 vector = vectors[0]
                 result.embedded += 1
+                if (
+                    limit_files is not None
+                    and result.embedded >= limit_files
+                ):
+                    self._audit(
+                        "info",
+                        "project.limit_reached",
+                        project_id=project_id,
+                        limit=limit_files,
+                    )
+                    limit_reached = True
+                    break
 
                 chunk_to_persist = code_chunk.__class__(
                     chunk_hash=code_chunk.chunk_hash,

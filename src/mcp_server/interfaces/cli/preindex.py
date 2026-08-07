@@ -265,7 +265,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 file=sys.stderr,
             )
         try:
-            result = comp.preindex_use_case.execute(project.id)
+            result = comp.preindex_use_case.execute(
+                project.id, limit_files=args.limit_files
+            )
         except GeminiTransientError as exc:
             print(f"ERROR: gemini embedding exhausted retries: {exc}", file=sys.stderr)
             return PreindexExitCode.GEMINI_ERROR.value
