@@ -253,14 +253,6 @@ article.playground-match pre {
     word-break: break-word;
 }
 
-footer.playground-footer {
-    margin-top: 3rem;
-    padding-top: 1rem;
-    border-top: 1px solid var(--playground-card-border);
-    color: var(--playground-muted);
-    font-size: 0.875rem;
-}
-
 /* --- MCP Explorer hero (playground.html top section) --- */
 
 .explorer-hero {
