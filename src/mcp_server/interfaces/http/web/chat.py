@@ -16,13 +16,15 @@ Two routes:
       AskPortfolioChunk(kind="token")     -> ServerSentEvent(raw_data=<token>)
       AskPortfolioChunk(kind="tool_call") -> ServerSentEvent(data=<dict>, event="tool_call")
       AskPortfolioChunk(kind="done")      -> ServerSentEvent(raw_data="[DONE]")  (terminal)
-      AskPortfolioChunk(kind="error")     -> ServerSentEvent(raw_data="[ERROR]") (terminal)
+      AskPortfolioChunk(kind="error")     -> ServerSentEvent(raw_data="[ERROR]")
+                                               + typed JSON error event (terminal)
 
 The terminal ``[DONE]`` and ``[ERROR]`` sentinels are consumed by the
 browser client (per the ``chat-persistence`` spec): ``[DONE]`` triggers
-the localStorage history append; ``[ERROR]`` renders the inline
-"connection lost, retry?" affordance and does NOT persist a partial
-assistant message.
+localStorage history append; ``[ERROR]`` is followed by a typed error event
+when the server knows the cause, while a missing follow-up indicates a
+connection drop. Errors do NOT persist a partial assistant message.
+
 
 Per ADR-004 the server is stateless — no DB row, no in-memory
 session map, no cookie is set on any response. The browser owns the
@@ -141,7 +143,9 @@ async def chat_stream_events(
     * ``kind="token"``     → ``ServerSentEvent(raw_data=<token>)``
     * ``kind="tool_call"`` → ``ServerSentEvent(data=<dict>, event="tool_call")``
     * ``kind="done"``      → ``ServerSentEvent(raw_data="[DONE]")`` (terminal)
-    * ``kind="error"``     → ``ServerSentEvent(raw_data="[ERROR]")`` (terminal, REL-3)
+    * ``kind="error"``     → ``ServerSentEvent(raw_data="[ERROR]")`` followed
+      by ``ServerSentEvent(data={"message": ...}, event="error")``
+      (terminal, REL-3)
 
     The route is deliberately stateless: no cookie is set, no
     session map is updated, no DB row is created. Per ADR-004 the
@@ -177,10 +181,19 @@ async def chat_stream_events(
                 yield ServerSentEvent(raw_data="[DONE]")
                 return
             elif chunk.kind == "error":
+                error_message = chunk.error or "The agent could not complete the request."
                 yield ServerSentEvent(raw_data="[ERROR]")
+                yield ServerSentEvent(
+                    data={"message": error_message},
+                    event="error",
+                )
                 return
     except RateLimitExceeded:
         yield ServerSentEvent(raw_data="[ERROR]")
+        yield ServerSentEvent(
+            data={"message": "Rate limit exceeded — try again in a minute."},
+            event="error",
+        )
         return
 
 

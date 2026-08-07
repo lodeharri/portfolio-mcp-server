@@ -13,7 +13,9 @@ Two route handlers under test (PR2b task 2b.3):
   terminal chunks map to:
 
     * ``kind="done"``  → ``data: [DONE]\n\n`` (success sentinel)
-    * ``kind="error"`` → ``data: [ERROR]\n\n`` (failure sentinel; REL-3)
+        * ``kind="error"`` → ``data: [ERROR]\n\n`` (failure sentinel; REL-3)
+          followed by ``event: error`` with a JSON message
+
     * ``kind="token"`` → ``data: <token>\n\n``
     * ``kind="tool_call"`` → ``event: tool_call\ndata: {"name": ...}\n\n``
 
@@ -313,8 +315,8 @@ class TestPostChatStream:
         """When the use case yields ``kind='error'`` (REL-3), the route MUST
         emit ``data: [ERROR]\\n\\n`` as the terminal event.
 
-        This is the contract the browser client relies on to render the
-        inline "connection lost, retry?" affordance.
+        This is the contract the browser client relies on to distinguish a
+        known agent error from a dropped connection.
         """
         from mcp_server.application.use_cases.ask_portfolio import (
             AskPortfolioUseCase,
@@ -325,7 +327,7 @@ class TestPostChatStream:
                 self, request: AskPortfolioRequest
             ) -> AsyncIterator[AskPortfolioChunk]:
                 yield AskPortfolioChunk(kind="token", answer_token="partial ")
-                yield AskPortfolioChunk(kind="error", error="agent exploded")
+                yield AskPortfolioChunk(kind="error", error="rate limit hit")
 
         app = _make_app(chat_router)
         # Swap the stub composition's use case for one that yields an
@@ -350,14 +352,17 @@ class TestPostChatStream:
             )
         body = response.text
         # The partial token MAY appear; what MUST appear is the error
-        # sentinel — the terminal event for the error path.
-        assert "data: [ERROR]" in body
-        # The terminal sentinel is the last meaningful event; neither
-        # DONE nor further tokens may follow.
-        stripped = body.strip()
-        assert stripped.endswith("data: [ERROR]"), (
-            f"error stream must terminate with ERROR sentinel; tail={stripped[-80:]!r}"
-        )
+        # sentinel and its follow-up message event.
+        assert "data: [ERROR]\n\n" in body
+        assert "event: error" in body
+        error_data_lines = [
+            line for line in body.splitlines() if line.startswith("data: ") and '"message"' in line
+        ]
+        assert error_data_lines, f"error message event missing; body={body!r}"
+        assert json.loads(error_data_lines[0].split("data: ", 1)[1]) == {
+            "message": "rate limit hit"
+        }
+        assert body.index("data: [ERROR]") < body.index("event: error")
         # And no spurious DONE event after the error.
         assert body.count("data: [DONE]") == 0
 
@@ -387,7 +392,49 @@ class TestPostChatStream:
             )
 
     @pytest.mark.asyncio
-    async def test_post_chat_stream_renders_tool_call_event(self, chat_router) -> None:
+    async def test_post_chat_stream_enriches_rate_limit_exception(self, chat_router) -> None:
+        from mcp_server.application.use_cases.ask_portfolio import AskPortfolioUseCase
+        from mcp_server.domain.exceptions import RateLimitExceeded
+
+        class _RateLimitStubAskPortfolio(AskPortfolioUseCase):
+            async def astream(
+                self, request: AskPortfolioRequest
+            ) -> AsyncIterator[AskPortfolioChunk]:
+                if False:
+                    yield AskPortfolioChunk(kind="done")
+                raise RateLimitExceeded("rate limit exceeded for client_ip=127.0.0.1")
+
+        app = _make_app(chat_router)
+        app.state.composition.ask_portfolio_use_case = _RateLimitStubAskPortfolio(  # type: ignore[assignment]
+            agent=None,  # type: ignore[arg-type]
+            tools=[],
+            sanitizer=None,  # type: ignore[arg-type]
+            audit=None,  # type: ignore[arg-type]
+            rate_limiter=None,  # type: ignore[arg-type]
+        )
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://testserver"
+        ) as client:
+            response = await client.post(
+                "/chat/stream",
+                json={
+                    "messages": [{"role": "user", "content": "x"}],
+                    "conversation_id": "rate-limit",
+                },
+            )
+
+        body = response.text
+        assert "data: [ERROR]\n\n" in body
+        error_data_lines = [
+            line for line in body.splitlines() if line.startswith("data: ") and '"message"' in line
+        ]
+        assert error_data_lines, f"rate-limit message event missing; body={body!r}"
+        assert json.loads(error_data_lines[0].split("data: ", 1)[1]) == {
+            "message": "Rate limit exceeded — try again in a minute."
+        }
+        assert "client_ip" not in body
+
         """When the use case yields ``kind='tool_call'``, the route MUST
         emit a typed SSE event with a ``tool_call`` event channel and
         a JSON payload carrying the tool name.

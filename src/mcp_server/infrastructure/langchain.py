@@ -143,9 +143,11 @@ class LangChainAgentAdapter:
         ADR-003) and yields one token chunk per ``AIMessageChunk``
         event. Non-AI messages (HumanMessage, ToolMessage) are
         silently filtered so the chat shows only the assistant's
-        prose. Chunks with ``content is None`` (LangGraph emits
-        these during tool handoff) are skipped to avoid
-        ``str(None) == 'None'`` leaking into the SSE stream (REL-12).
+        prose.         Chunks with empty content shapes (``None``, empty strings, and empty
+        containers) are skipped to prevent representation artifacts from
+        leaking into the SSE stream. Multimodal text blocks are normalized to
+        their text values; blocks without text are ignored.
+
 
         A terminal ``AgentChunk(kind="done", data="")`` is yielded
         after the agent finishes, mirroring the mock adapter so
@@ -162,10 +164,35 @@ class LangChainAgentAdapter:
         ):
             if not isinstance(message, AIMessageChunk):
                 continue
-            if message.content is None:
-                # Skip tool-handoff chunks — str(None) is 'None'.
+            content = message.content
+            if content is None:
                 continue
-            yield AgentChunk(kind="token", data=str(message.content))
+            if isinstance(content, (str, list, tuple, dict)) and len(content) == 0:
+                continue
+            if isinstance(content, str) and not content.strip():
+                continue
+
+            if isinstance(content, (list, tuple)):
+                text_parts: list[str] = []
+                for block in content:
+                    if isinstance(block, str):
+                        text_parts.append(block)
+                    elif isinstance(block, dict) and block.get("type") == "text":
+                        text = block.get("text")
+                        if isinstance(text, str):
+                            text_parts.append(text)
+                token = "".join(text_parts)
+                if not token.strip():
+                    continue
+            elif isinstance(content, dict):
+                text = content.get("text") if content.get("type") == "text" else None
+                if not isinstance(text, str) or not text.strip():
+                    continue
+                token = text
+            else:
+                token = str(content)
+
+            yield AgentChunk(kind="token", data=token)
         yield AgentChunk(kind="done", data="")
 
 

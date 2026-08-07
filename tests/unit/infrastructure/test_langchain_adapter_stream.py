@@ -325,6 +325,46 @@ class TestLangChainAgentAdapterStream:
         # No chunk with the literal string 'None'.
         assert "None" not in [c.data for c in token_chunks]
 
+    @pytest.mark.asyncio
+    async def test_skips_empty_content_shapes_and_normalizes_text_blocks(self, monkeypatch) -> None:
+        class _FakeChatGoogleGenerativeAI:
+            def __init__(self, **_kwargs: Any) -> None:
+                pass
+
+            async def astream(
+                self,
+                payload: dict[str, Any],
+                config: dict[str, Any] | None = None,
+                *,
+                stream_mode: str = "values",
+            ) -> AsyncIterator[tuple[Any, dict[str, Any]]]:
+                assert stream_mode == "messages"
+                for index, content in enumerate([[], "", None, "hello", ["partial text"]]):
+                    if content is None:
+                        message = AIMessageChunk.model_construct(content=None, id=str(index))
+                    else:
+                        message = AIMessageChunk(content=content)
+                    yield message, {}
+
+        monkeypatch.setattr(
+            "mcp_server.infrastructure.langchain.ChatGoogleGenerativeAI",
+            _FakeChatGoogleGenerativeAI,
+        )
+        monkeypatch.setattr(
+            "mcp_server.infrastructure.langchain.create_react_agent",
+            lambda llm, tools: llm,
+        )
+
+        adapter = LangChainAgentAdapter(api_key="dummy")
+
+        chunks: list[AgentChunk] = []
+        async for chunk in adapter.stream(AgentRequest(question="hi"), []):
+            chunks.append(chunk)
+
+        token_chunks = [chunk for chunk in chunks if chunk.kind == "token"]
+        assert [chunk.data for chunk in token_chunks] == ["hello", "partial text"]
+        assert chunks[-1] == AgentChunk(kind="done", data="")
+
 
 # ---------------------------------------------------------------------------
 # Mock adapter — same AgentChunk shape, zero network
