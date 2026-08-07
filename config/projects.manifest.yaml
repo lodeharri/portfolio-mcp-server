@@ -36,6 +36,7 @@ indexing:
     - .js
     - .jsx
     - .md
+    - .astro
   # Path prefixes to skip even within allowed projects. Conservative by
   # design — recruiter demo only cares about hand-written code, not
   # generated artifacts. ~70% volume reduction vs. unfiltered.
