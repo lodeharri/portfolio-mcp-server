@@ -158,6 +158,45 @@ class TestGetChatPage:
         assert ("fetch(" in body) or ("EventSource" in body)
 
     @pytest.mark.asyncio
+    async def test_get_chat_renders_terminal_composer_and_accessibility_state(
+        self, chat_router
+    ) -> None:
+        app = _make_app(chat_router)
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://testserver"
+        ) as client:
+            response = await client.get("/chat")
+        body = response.text
+        assert 'class="chat-header"' in body
+        assert 'class="chat-status__dot"' in body
+        assert "<textarea" in body
+        assert 'rows="1"' in body
+        assert 'aria-busy="false"' in body
+        assert 'class="chat-prompt"' in body
+        assert "Enter to send" in body
+        assert "Shift+Enter for newline" in body
+        assert "→" in body
+        assert "chat-typing" in body
+        assert "resizeInput" in body
+
+    @pytest.mark.asyncio
+    async def test_get_chat_parser_distinguishes_typed_errors_from_connection_drops(
+        self, chat_router
+    ) -> None:
+        app = _make_app(chat_router)
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://testserver"
+        ) as client:
+            response = await client.get("/chat")
+        body = response.text
+        assert "if (dataLine === ERROR)" in body
+        assert 'eventName === "error"' in body
+        assert "JSON.parse(dataLine)" in body
+        assert "serverErrorMessage" in body
+        assert 'showInlineRetry("Connection lost."' in body
+        assert "showInlineRetry(serverErrorMessage" in body
+
+    @pytest.mark.asyncio
     async def test_get_chat_extends_base_template(self, chat_router) -> None:
         """The page MUST extend ``base.html`` so navigation / stylesheets line up."""
         app = _make_app(chat_router)

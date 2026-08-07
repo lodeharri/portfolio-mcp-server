@@ -1,22 +1,29 @@
 {% extends "base.html" %}
 
-{% block title %}Chat — MCP Playground{% endblock %}
+{% block title %}Portfolio chat — MCP Playground{% endblock %}
 
 {% block content %}
 <section class="playground-chat" aria-labelledby="chat-heading">
-    <h1 id="chat-heading">Chat with the agent</h1>
-    <p class="chat-summary">
-        Each browser keeps its own conversation in <code>localStorage</code>;
-        the server never sees a session id and sets no cookies.
-    </p>
-
-    <div
-        id="chat-status"
-        class="chat-status chat-status--ready"
-        data-state="ready"
-        role="status"
-        aria-live="polite"
-    >Ready</div>
+    <header class="chat-header">
+        <div class="chat-heading-group">
+            <p class="chat-eyebrow">Portfolio / agent channel</p>
+            <h1 id="chat-heading">Ask the portfolio</h1>
+            <p class="chat-summary">
+                Explore projects, architecture, and the decisions behind the code.
+                Your conversation stays in this browser.
+            </p>
+        </div>
+        <div
+            id="chat-status"
+            class="chat-status chat-status--ready"
+            data-state="ready"
+            role="status"
+            aria-live="polite"
+        >
+            <span class="chat-status__dot" aria-hidden="true"></span>
+            <span class="chat-status__label">Ready</span>
+        </div>
+    </header>
 
     <ol
         id="chat-transcript"
@@ -29,23 +36,34 @@
         class="chat-form"
         autocomplete="off"
         aria-label="Send a message to the agent"
+        aria-busy="false"
     >
         <label for="chat-input" class="visually-hidden">Your message</label>
-        <input
-            id="chat-input"
-            name="message"
-            class="chat-input"
-            placeholder="Ask about a project, an architectural decision, or the codebase…"
-            autocomplete="off"
-            maxlength="4000"
-            required
-            aria-label="Your message"
-        >
-        <button
-            id="chat-submit"
-            type="submit"
-            class="chat-submit"
-        >Send</button>
+        <div class="chat-composer">
+            <span class="chat-prompt" aria-hidden="true">&gt;</span>
+            <textarea
+                id="chat-input"
+                name="message"
+                class="chat-input"
+                placeholder="Ask about a project, an architectural decision, or the codebase…"
+                autocomplete="off"
+                maxlength="4000"
+                rows="1"
+                required
+                aria-label="Your message"
+            ></textarea>
+            <button
+                id="chat-submit"
+                type="submit"
+                class="chat-submit"
+            >
+                <span>Send</span>
+                <span class="chat-submit__arrow" aria-hidden="true">→</span>
+            </button>
+        </div>
+        <p class="chat-input-meta">
+            Enter to send <span aria-hidden="true">·</span> Shift+Enter for newline
+        </p>
     </form>
 
     <p
@@ -67,11 +85,6 @@
 {% endblock %}
 
 {% block scripts %}
-{#-
-    Inline chat client (stateful browser + stateless server per ADR-004).
-    Uses fetch + ReadableStream because the native EventSource API only
-    supports GET — POSTing the conversation history requires fetch.
--#}
 <script>
 (function () {
     "use strict";
@@ -90,42 +103,48 @@
     var status = document.getElementById("chat-status");
     var persistenceNotice = document.getElementById("chat-persistence-notice");
 
-    // Pre-fill from /playground ?prefill=... redirect so the user doesn't
-    // retype their question. The session UUID + history load happens
-    // after this; the prefill text only fills the input once.
+    function scrollTranscript() {
+        if (transcript) transcript.scrollTop = transcript.scrollHeight;
+    }
+
+    function resizeInput() {
+        if (!input) return;
+        input.style.height = "auto";
+        var computed = window.getComputedStyle(input);
+        var lineHeight = parseFloat(computed.lineHeight) || 23;
+        var padding = (parseFloat(computed.paddingTop) || 0) +
+            (parseFloat(computed.paddingBottom) || 0);
+        var maxHeight = lineHeight * 4 + padding;
+        input.style.height = Math.min(input.scrollHeight, maxHeight) + "px";
+        input.style.overflowY = input.scrollHeight > maxHeight ? "auto" : "hidden";
+    }
+
     (function prefillFromQuery() {
         try {
             var params = new URLSearchParams(window.location.search);
             var prefill = params.get("prefill");
             if (prefill && input) {
                 input.value = prefill;
-                // Clean the URL so a reload doesn't re-prefill.
+                resizeInput();
                 if (window.history && window.history.replaceState) {
                     var url = new URL(window.location.href);
                     url.searchParams.delete("prefill");
                     window.history.replaceState({}, "", url.toString());
                 }
-                // Focus and place caret at end so the user can append context.
                 setTimeout(function () {
                     input.focus();
-                    var v = input.value;
-                    input.setSelectionRange(v.length, v.length);
+                    var value = input.value;
+                    input.setSelectionRange(value.length, value.length);
                 }, 50);
             }
-        } catch (_e) { /* ignore */ }
+        } catch (_e) {}
     })();
 
-    // REL-4 graceful degradation: when the browser can't do fetch or
-    // ReadableStream, the form is non-functional but the rest of the
-    // playground still works. Surface a clear inline notice.
     var jsAvailable = (
         typeof window.fetch === "function" &&
         typeof window.ReadableStream === "function"
     );
 
-    // Channel for cross-tab coordination of history writes — tabs
-    // coordinate via a tiny lock flag so concurrent saves don't clobber
-    // each other (REL-7 fix from PR1 review).
     var channel = null;
     var lockHeld = false;
     var pendingUnlockedHandlers = [];
@@ -142,21 +161,18 @@
                 }
             });
         }
-    } catch (_e) { /* BroadcastChannel may be unavailable */ }
+    } catch (_e) {}
 
-    // Graceful localStorage wrapper: catches SecurityError (private
-    // mode) and QuotaExceededError. Returns null on read failure,
-    // returns true/false on write success/failure.
     var persistenceDisabled = false;
     function safeGet(key) {
         try {
-            var value = window.localStorage.getItem(key);
-            return value;
+            return window.localStorage.getItem(key);
         } catch (_e) {
             persistenceDisabled = true;
             return null;
         }
     }
+
     function safeSet(key, value) {
         try {
             window.localStorage.setItem(key, value);
@@ -167,18 +183,16 @@
         }
     }
 
-    // 1. Session UUID — generated via crypto.randomUUID() on first
-    // visit per chat-persistence spec; never derived from IP, cookie,
-    // or any server-side state.
     var sessionId = safeGet(SID_KEY);
     if (!sessionId) {
         try {
             sessionId = (window.crypto && window.crypto.randomUUID)
                 ? window.crypto.randomUUID()
                 : null;
-        } catch (_e) { sessionId = null; }
+        } catch (_e) {
+            sessionId = null;
+        }
         if (!sessionId) {
-            // RFC4122-shaped fallback (no network dependency).
             sessionId = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(
                 /[xy]/g, function (ch) {
                     var r = (Math.random() * 16) | 0;
@@ -199,27 +213,67 @@
             var parsed = JSON.parse(raw);
             return Array.isArray(parsed) ? parsed : [];
         } catch (_e) {
-            // Corrupted entry: keep the bad payload in storage for
-            // inspection rather than silently wiping recruiter data.
             return [];
         }
     }
 
-    function renderMessage(role, content, isPartial) {
+    function messageTime(value) {
+        var date = value ? new Date(value) : new Date();
+        if (isNaN(date.getTime())) date = new Date();
+        return {
+            iso: date.toISOString(),
+            label: date.toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+            }),
+        };
+    }
+
+    function renderTypingIndicator(body) {
+        var indicator = document.createElement("span");
+        indicator.className = "chat-typing";
+        indicator.setAttribute("role", "status");
+        indicator.setAttribute("aria-label", "Agent is thinking");
+        for (var i = 0; i < 3; i++) {
+            var dot = document.createElement("span");
+            dot.className = "chat-typing__dot";
+            dot.setAttribute("aria-hidden", "true");
+            indicator.appendChild(dot);
+        }
+        body.appendChild(indicator);
+    }
+
+    function renderMessage(role, content, isPartial, timestamp) {
+        var messageRole = role === "user" ? "user" : "assistant";
         var li = document.createElement("li");
-        li.className = "chat-message chat-message--" + role;
-        li.dataset.role = role;
+        li.className = "chat-message chat-message--" + messageRole;
+        li.dataset.role = messageRole;
         if (isPartial) li.dataset.partial = "true";
+
+        var meta = document.createElement("div");
+        meta.className = "chat-message__meta";
         var label = document.createElement("span");
         label.className = "chat-message__role";
-        label.textContent = role === "user" ? "You" : "Agent";
+        label.textContent = messageRole === "user" ? "You" : "Agent";
+        var time = messageTime(timestamp);
+        var timeNode = document.createElement("time");
+        timeNode.className = "chat-message__time";
+        timeNode.dateTime = time.iso;
+        timeNode.textContent = time.label;
+        meta.appendChild(label);
+        meta.appendChild(timeNode);
+
         var body = document.createElement("p");
         body.className = "chat-message__content";
-        body.textContent = content;
-        li.appendChild(label);
+        if (isPartial && !content) {
+            renderTypingIndicator(body);
+        } else {
+            body.textContent = content || "";
+        }
+        li.appendChild(meta);
         li.appendChild(body);
         transcript.appendChild(li);
-        transcript.scrollTop = transcript.scrollHeight;
+        scrollTranscript();
         return li;
     }
 
@@ -230,7 +284,7 @@
             var msg = messages[i];
             if (msg && (msg.role === "user" || msg.role === "assistant") &&
                 typeof msg.content === "string") {
-                renderMessage(msg.role, msg.content, false);
+                renderMessage(msg.role, msg.content, false, msg.timestamp);
             }
         }
     }
@@ -238,8 +292,18 @@
     function setStatus(state, label) {
         if (!status) return;
         status.dataset.state = state;
-        status.textContent = label;
         status.className = "chat-status chat-status--" + state;
+        var statusLabel = status.querySelector(".chat-status__label");
+        if (statusLabel) {
+            statusLabel.textContent = label;
+        } else {
+            status.textContent = label;
+        }
+    }
+
+    function setStreaming(streaming) {
+        if (form) form.setAttribute("aria-busy", streaming ? "true" : "false");
+        if (submitButton) submitButton.disabled = streaming;
     }
 
     function showPersistenceNotice() {
@@ -250,6 +314,21 @@
         var li = document.createElement("li");
         li.className = "chat-message chat-message--error";
         li.dataset.role = "error";
+        li.setAttribute("role", "alert");
+
+        var meta = document.createElement("div");
+        meta.className = "chat-message__meta";
+        var label = document.createElement("span");
+        label.className = "chat-message__role";
+        label.textContent = "Error";
+        var time = messageTime();
+        var timeNode = document.createElement("time");
+        timeNode.className = "chat-message__time";
+        timeNode.dateTime = time.iso;
+        timeNode.textContent = time.label;
+        meta.appendChild(label);
+        meta.appendChild(timeNode);
+
         var body = document.createElement("p");
         body.className = "chat-message__content";
         body.textContent = message + " ";
@@ -262,14 +341,12 @@
             if (typeof onRetry === "function") onRetry();
         });
         body.appendChild(button);
+        li.appendChild(meta);
         li.appendChild(body);
         transcript.appendChild(li);
-        transcript.scrollTop = transcript.scrollHeight;
+        scrollTranscript();
     }
 
-    // Two-tab lock — Serialize writes so the last tab's save isn't
-    // clobbered by a concurrent save from a sibling tab. New writes
-    // wait for the unlock signal before persisting.
     function withLock(fn) {
         if (!channel || lockHeld) {
             if (lockHeld) {
@@ -278,13 +355,17 @@
                 return;
             }
         }
-        try { channel && channel.postMessage("lock"); } catch (_e) {}
+        try {
+            if (channel) channel.postMessage("lock");
+        } catch (_e) {}
         lockHeld = true;
         try {
             fn();
         } finally {
             lockHeld = false;
-            try { channel && channel.postMessage("unlock"); } catch (_e) {}
+            try {
+                if (channel) channel.postMessage("unlock");
+            } catch (_e) {}
         }
     }
 
@@ -293,16 +374,11 @@
             showPersistenceNotice();
             return;
         }
-        // Re-read the live storage under the lock so concurrent tabs
-        // see the freshest version rather than the stale snapshot we
-        // loaded earlier.
-        function doSave() {
-            var payload = JSON.stringify(messages);
-            if (safeSet(historyKey, payload) === null) {
+        withLock(function () {
+            if (safeSet(historyKey, JSON.stringify(messages)) === null) {
                 showPersistenceNotice();
             }
-        }
-        withLock(doSave);
+        });
     }
 
     function appendToHistory(role, content) {
@@ -316,20 +392,19 @@
             showInlineRetry("JavaScript is required for streaming chat.");
             return;
         }
+        if (submitButton.disabled) return;
+
         var historySnapshot = loadHistory();
         var messages = historySnapshot.concat([
             { role: "user", content: text },
         ]);
-
-        // Render the user message immediately so the recruiter sees it.
         renderMessage("user", text, false);
-
         var assistantAcc = "";
         var assistantNode = renderMessage("assistant", "", true);
         var assistantContent = assistantNode.querySelector(".chat-message__content");
 
-        setStatus("streaming", "Streaming…");
-        submitButton.disabled = true;
+        setStatus("streaming", "Agent thinking");
+        setStreaming(true);
 
         var controller = new AbortController();
         var res;
@@ -346,11 +421,11 @@
                 }),
                 signal: controller.signal,
             });
-        } catch (networkErr) {
+        } catch (_networkErr) {
             assistantNode.remove();
             setStatus("ready", "Ready");
-            submitButton.disabled = false;
-            showInlineRetry("Connection lost. Retry?", function () {
+            setStreaming(false);
+            showInlineRetry("Connection lost.", function () {
                 sendMessage(text);
             });
             return;
@@ -359,8 +434,8 @@
         if (!res.ok || !res.body) {
             assistantNode.remove();
             setStatus("ready", "Ready");
-            submitButton.disabled = false;
-            showInlineRetry("Connection lost. Retry?", function () {
+            setStreaming(false);
+            showInlineRetry("Connection lost.", function () {
                 sendMessage(text);
             });
             return;
@@ -371,12 +446,14 @@
         var buffer = "";
         var sawDone = false;
         var sawError = false;
+        var sawErrorMessage = false;
+        var serverErrorMessage = "";
 
         try {
             while (true) {
-                var r = await reader.read();
-                if (r.done) break;
-                buffer += decoder.decode(r.value, { stream: true });
+                var result = await reader.read();
+                if (result.done) break;
+                buffer += decoder.decode(result.value, { stream: true });
                 var idx;
                 while ((idx = buffer.indexOf("\n\n")) !== -1) {
                     var block = buffer.slice(0, idx);
@@ -387,7 +464,8 @@
                     for (var i2 = 0; i2 < lines.length; i2++) {
                         var line = lines[i2];
                         if (line.indexOf("data:") === 0) {
-                            dataLine = line.slice(5).replace(/^ /, "");
+                            var dataPart = line.slice(5).replace(/^ /, "");
+                            dataLine = dataLine === null ? dataPart : dataLine + "\n" + dataPart;
                         } else if (line.indexOf("event:") === 0) {
                             eventName = line.slice(6).trim();
                         }
@@ -399,47 +477,80 @@
                     }
                     if (dataLine === ERROR) {
                         sawError = true;
-                        break;
+                        continue;
                     }
+                    if (eventName === "error") {
+                        try {
+                            var errorPayload = JSON.parse(dataLine);
+                            if (errorPayload &&
+                                typeof errorPayload.message === "string" &&
+                                errorPayload.message.trim()) {
+                                serverErrorMessage = errorPayload.message;
+                                sawErrorMessage = true;
+                            }
+                        } catch (_parseErr) {}
+                        if (sawErrorMessage) break;
+                        continue;
+                    }
+                    if (sawError) continue;
                     if (eventName === "tool_call") {
-                        // Tool-call audit — surfaced inline as muted text.
-                        var li = document.createElement("li");
-                        li.className = "chat-message chat-message--tool";
-                        li.textContent = "tool: " + dataLine;
-                        transcript.insertBefore(li, assistantNode);
+                        var toolNode = document.createElement("li");
+                        toolNode.className = "chat-message chat-message--tool";
+                        toolNode.dataset.role = "tool";
+                        var toolMeta = document.createElement("div");
+                        toolMeta.className = "chat-message__meta";
+                        var toolLabel = document.createElement("span");
+                        toolLabel.className = "chat-message__role";
+                        toolLabel.textContent = "Tool";
+                        var toolTime = messageTime();
+                        var toolTimeNode = document.createElement("time");
+                        toolTimeNode.className = "chat-message__time";
+                        toolTimeNode.dateTime = toolTime.iso;
+                        toolTimeNode.textContent = toolTime.label;
+                        toolMeta.appendChild(toolLabel);
+                        toolMeta.appendChild(toolTimeNode);
+                        var toolContent = document.createElement("p");
+                        toolContent.className = "chat-message__content";
+                        toolContent.textContent = "tool: " + dataLine;
+                        toolNode.appendChild(toolMeta);
+                        toolNode.appendChild(toolContent);
+                        transcript.insertBefore(toolNode, assistantNode);
+                        scrollTranscript();
                         continue;
                     }
                     assistantAcc += dataLine;
                     if (assistantContent) assistantContent.textContent = assistantAcc;
-                    transcript.scrollTop = transcript.scrollHeight;
+                    scrollTranscript();
                 }
-                if (sawDone || sawError) break;
+                if (sawDone || sawErrorMessage) break;
             }
-        } catch (_streamErr) {
-            sawError = true;
-        }
+        } catch (_streamErr) {}
 
         if (sawDone) {
-            assistantContent.textContent = assistantAcc;
+            if (assistantContent) assistantContent.textContent = assistantAcc;
             assistantNode.dataset.partial = "false";
             appendToHistory("assistant", assistantAcc);
             setStatus("ready", "Ready");
-            submitButton.disabled = false;
+            setStreaming(false);
             input.value = "";
+            resizeInput();
             input.focus();
         } else {
-            // Connection dropped before [DONE] — discard the partial
-            // assistant message (do NOT persist); render retry affordance.
             assistantNode.remove();
             setStatus("ready", "Ready");
-            submitButton.disabled = false;
-            showInlineRetry("Connection lost. Retry?", function () {
-                sendMessage(text);
-            });
+            setStreaming(false);
+            if (sawErrorMessage) {
+                showInlineRetry(serverErrorMessage, function () {
+                    sendMessage(text);
+                });
+            } else {
+                showInlineRetry("Connection lost.", function () {
+                    sendMessage(text);
+                });
+            }
         }
     }
 
-    // Bootstrap
     if (!jsAvailable) {
         setStatus("unsupported", "JavaScript required");
         showInlineRetry(
@@ -451,16 +562,23 @@
         setStatus("ready", "Ready");
     }
 
-    if (persistenceDisabled) {
-        showPersistenceNotice();
-    }
+    if (persistenceDisabled) showPersistenceNotice();
 
     form.addEventListener("submit", function (event) {
         event.preventDefault();
         var text = input.value.trim();
-        if (!text) return;
+        if (!text || submitButton.disabled) return;
         sendMessage(text);
     });
+
+    input.addEventListener("input", resizeInput);
+    input.addEventListener("keydown", function (event) {
+        if (event.key === "Enter" && !event.shiftKey) {
+            event.preventDefault();
+            form.requestSubmit();
+        }
+    });
+    resizeInput();
 })();
 </script>
 {% endblock %}
