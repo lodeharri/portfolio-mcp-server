@@ -1,21 +1,21 @@
 {% extends "base.html" %}
 
-{% block title %}Harrison Rodriguez — MCP Portfolio Server{% endblock %}
+{% block title %}Harrison Rodriguez — Servidor MCP de Portfolio{% endblock %}
 
 {% block content %}
 <header class="explorer-hero">
-    <h1>Harrison Rodriguez — MCP Portfolio Server</h1>
+    <h1>Harrison Rodriguez — Servidor MCP de Portfolio</h1>
     <p class="hero-lede">
-        An <a href="/mcp" rel="noopener"><code>/mcp</code></a> Model Context Protocol server exposing
-        <strong>{{ projects|length }} portfolio project{{ 's' if projects|length != 1 else '' }}</strong>
-        through six tools — list projects, semantic code search, architecture summaries,
-        README digests, architecture diagrams, and a free-form agent. Click
-        <em>Try the MCP playground</em> below to drive every tool from the browser.
+        Un servidor <a href="/mcp" rel="noopener"><code>/mcp</code></a> del Model Context Protocol que expone
+        <strong>{{ projects|length }} proyecto{{ 's' if projects|length != 1 else '' }} de portfolio</strong>
+        a través de seis herramientas — listar proyectos, búsqueda semántica de código,
+        resúmenes de arquitectura, digestos de README, diagramas de arquitectura y un agente de lenguaje natural.
+        Haz clic en <em>Probar el playground MCP</em> más abajo para invocar cada herramienta desde el navegador.
     </p>
 </header>
 
 <section>
-    <h2>Indexed projects</h2>
+    <h2>Proyectos indexados</h2>
     {% if projects %}
     <ul class="playground-projects">
         {% for project in projects %}
@@ -24,19 +24,19 @@
             — {{ project.display_name or project.id }}
             {% if project.description %}<br>{{ project.description }}{% endif %}
             <br>
-            <span class="chunks">{{ project.index_chunk_count }} indexed chunks</span>
+            <span class="chunks">{{ project.index_chunk_count }} chunks indexados</span>
             ·
-            <a href="/playground">open in playground</a>
+            <a href="/playground">abrir en playground</a>
         </li>
         {% endfor %}
     </ul>
     {% else %}
-    <p>No projects declared in the manifest yet.</p>
+    <p>Aún no hay proyectos en el manifiesto.</p>
     {% endif %}
 </section>
 
 <div class="playground-cta">
-    <a href="/playground">Try the MCP playground</a>
-    <a class="secondary" href="/chat">Chat with the portfolio agent</a>
+    <a href="/playground">Probar el playground MCP</a>
+    <a class="secondary" href="/chat">Chatear con el agente del portfolio</a>
 </div>
 {% endblock %}

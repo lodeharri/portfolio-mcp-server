@@ -1,128 +1,129 @@
 {% extends "base.html" %}
 
-{% block title %}MCP Server — Portfolio Tools Explorer{% endblock %}
+{% block title %}Probar el servidor MCP — Explorador de herramientas del portfolio{% endblock %}
 
 {% block content %}
 <header class="explorer-hero">
-    <h1>Try the MCP server</h1>
+    <h1>Probar el servidor MCP</h1>
     <p class="hero-lede">
-        Six tools that expose <strong>Harrison Rodriguez's portfolio</strong> — project metadata,
-        semantic code search, architecture summaries, README digest, architecture diagrams, and a
-        free-form agent. Each card below calls one tool directly; results render inline.
+        Seis herramientas que exponen <strong>el portfolio de Harrison Rodriguez</strong> — metadatos de proyectos,
+        búsqueda semántica de código, resumen de arquitectura, digesto de README, diagramas de arquitectura y un
+        agente de lenguaje natural. Cada tarjeta de abajo invoca una herramienta directamente; los resultados se
+        muestran en línea.
     </p>
 </header>
 
 <section class="playground-form-card">
     <h2>list_projects</h2>
-    <p>List every project declared in the manifest with its current index size.</p>
+    <p>Lista todos los proyectos declarados en el manifiesto con su tamaño de índice actual.</p>
     <form hx-post="/playground/api/list_projects"
           hx-target="#result-list_projects"
           hx-swap="innerHTML"
           method="post"
           action="/playground/api/list_projects">
-        <button type="submit">List projects</button>
+        <button type="submit">Listar proyectos</button>
     </form>
     <div id="result-list_projects" class="result" role="status"></div>
 </section>
 
 <section class="playground-form-card">
     <h2>search_code</h2>
-    <p>Hybrid lexical/semantic search over the pre-indexed code chunks.</p>
+    <p>Búsqueda híbrida léxica/semántica sobre los chunks de código pre-indexados.</p>
     <form hx-post="/playground/api/search_code"
           hx-target="#result-search_code"
           hx-swap="innerHTML"
           method="post"
           action="/playground/api/search_code">
-        <label for="search_code-query">query</label>
+        <label for="search_code-query">consulta</label>
         <input type="search"
                id="search_code-query"
                name="query"
                required
-               placeholder="rate limit, async, agent...">
-        <button type="submit">Search</button>
+               placeholder="límite de peticiones, async, agente...">
+        <button type="submit">Buscar</button>
     </form>
     <div id="result-search_code" class="result" role="status"></div>
 </section>
 
 <section class="playground-form-card">
     <h2>explain_architecture</h2>
-    <p>Summarize a project's architecture from its ADR (LLM, max 350 tokens).</p>
+    <p>Resume la arquitectura de un proyecto a partir de su ADR (LLM, máx. 350 tokens).</p>
     <form hx-post="/playground/api/explain_architecture"
           hx-target="#result-explain_architecture"
           hx-swap="innerHTML"
           method="post"
           action="/playground/api/explain_architecture">
-        <label for="explain_architecture-project_id">project_id</label>
+        <label for="explain_architecture-project_id">id_proyecto</label>
         <input type="text"
                id="explain_architecture-project_id"
                name="project_id"
                required
                list="project-ids"
                placeholder="finance-coach-latam">
-        <button type="submit">Explain</button>
+        <button type="submit">Explicar</button>
     </form>
     <div id="result-explain_architecture" class="result" role="status"></div>
 </section>
 
 <section class="playground-form-card">
     <h2>summarize_readme</h2>
-    <p>Recruiter one-paragraph summary of a declared README (LLM, max 200 tokens).</p>
+    <p>Resumen de un párrafo, orientado a reclutadores, de un README declarado (LLM, máx. 200 tokens).</p>
     <form hx-post="/playground/api/summarize_readme"
           hx-target="#result-summarize_readme"
           hx-swap="innerHTML"
           method="post"
           action="/playground/api/summarize_readme">
-        <label for="summarize_readme-project_id">project_id</label>
+        <label for="summarize_readme-project_id">id_proyecto</label>
         <input type="text"
                id="summarize_readme-project_id"
                name="project_id"
                required
                list="project-ids"
                placeholder="landing-page-portfolio">
-        <button type="submit">Summarize</button>
+        <button type="submit">Resumir</button>
     </form>
     <div id="result-summarize_readme" class="result" role="status"></div>
 </section>
 
 <section class="playground-form-card">
     <h2>get_architecture_diagram</h2>
-    <p>Inline SVG architecture diagram from the manifest-declared SVG file.</p>
+    <p>Diagrama de arquitectura SVG en línea, desde el archivo SVG declarado en el manifiesto.</p>
     <form hx-post="/playground/api/get_architecture_diagram"
           hx-target="#result-get_architecture_diagram"
           hx-swap="innerHTML"
           method="post"
           action="/playground/api/get_architecture_diagram">
-        <label for="get_architecture_diagram-project_id">project_id</label>
+        <label for="get_architecture_diagram-project_id">id_proyecto</label>
         <input type="text"
                id="get_architecture_diagram-project_id"
                name="project_id"
                required
                list="project-ids"
                placeholder="finance-coach-latam">
-        <button type="submit">Render diagram</button>
+        <button type="submit">Renderizar diagrama</button>
     </form>
     <div id="result-get_architecture_diagram" class="result" role="status"></div>
 </section>
 
 <section class="playground-form-card playground-form-card--cta">
-    <h2>ask_portfolio <span class="badge badge-stream">streaming</span></h2>
+    <h2>ask_portfolio <span class="badge badge-stream">en vivo</span></h2>
     <p>
-        Free-form question routed through a LangChain ReAct agent that calls the other five
-        tools as needed. The agent streams tokens via SSE in the dedicated
-        <a href="/chat"><strong>Chat tab</strong></a>.
+        Pregunta en lenguaje natural, enrutada por un agente LangChain ReAct que invoca las otras cinco
+        herramientas según sea necesario. El agente transmite tokens vía SSE en la pestaña
+        <a href="/chat"><strong>Chat</strong></a> dedicada.
     </p>
     <form id="ask-portfolio-form"
           action="javascript:void(0)"
           onsubmit="window.location='/chat?prefill=' + encodeURIComponent(this.querySelector('[name=question]').value); return false;">
-        <label for="ask_portfolio-question">question</label>
+        <label for="ask_portfolio-question">pregunta</label>
         <input type="text"
                id="ask-portfolio-question"
                name="question"
                required
-               placeholder="What backend stack does finance-coach-latam use?">
-        <button type="submit">Ask &rarr;</button>
+               placeholder="¿Qué stack de backend usa finance-coach-latam?">
+        <button type="submit">Preguntar &rarr;</button>
     </form>
-    <p class="hint">Opens /chat with your question pre-filled. The agent will pick the right tools to answer.</p>
+    <p class="hint">Abre /chat con tu pregunta pre-cargada. El agente elegirá las herramientas correctas para responder.</p>
 </section>
 
 {% if projects %}

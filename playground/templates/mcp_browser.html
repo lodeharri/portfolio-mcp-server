@@ -1,40 +1,40 @@
 {% extends "base.html" %}
 
-{% block title %}MCP Browser — JSON-RPC Playground{% endblock %}
+{% block title %}Explorador MCP — Playground JSON-RPC{% endblock %}
 
 {% block content %}
 <header class="explorer-hero">
-    <h1>MCP Browser</h1>
+    <h1>Explorador MCP</h1>
     <p class="hero-lede">
-        Same JSON-RPC transport exposed at
-        <a href="/mcp/" rel="noopener"><code>/mcp/</code></a> — but driven from
-        your browser instead of Claude Desktop. Each form below does the
-        two-step handshake (<code>initialize</code> →
-        <code>tools/call</code>) and renders the raw response inline.
+        El mismo transporte JSON-RPC expuesto en
+        <a href="/mcp/" rel="noopener"><code>/mcp/</code></a> — pero controlado desde
+        tu navegador en lugar de Claude Desktop. Cada formulario de abajo realiza el
+        handshake de dos pasos (<code>initialize</code> →
+        <code>tools/call</code>) y muestra la respuesta en bruto en línea.
     </p>
     <p class="hero-lede" style="margin-top:0.5rem">
-        <strong>Server:</strong>
+        <strong>Servidor:</strong>
         <code>{{ server.name }}@{{ server.version }}</code> ·
-        <strong>Protocol:</strong>
+        <strong>Protocolo:</strong>
         <code>{{ server.protocol }}</code> ·
-        <strong>Tools:</strong>
+        <strong>Herramientas:</strong>
         <code>{{ server.tools_count }}</code>
     </p>
     {% if server.error %}
     <p class="hero-lede" style="color: var(--solar-red)">
-        Could not enumerate tools: {{ server.error }}
+        No se pudieron enumerar las herramientas: {{ server.error }}
     </p>
     {% endif %}
 </header>
 
 <section style="margin-top: 1.5rem">
-    <h2>Quick reference</h2>
+    <h2>Referencia rápida</h2>
     <p style="margin: 0.5rem 0">
-        This page calls <code>POST /mcp/</code> with
-        <code>Accept: application/json, text/event-stream</code> (the
-        <code>Not Acceptable</code> error you may have seen earlier
-        came from a client that did not send this header). Every
-        browser MCP UI must send it.
+        Esta página llama a <code>POST /mcp/</code> con la cabecera
+        <code>Accept: application/json, text/event-stream</code> (el error
+        <code>Not Acceptable</code> que pudiste haber visto antes
+        provenía de un cliente que no enviaba esta cabecera). Todo UI de
+        MCP en el navegador debe enviarla.
     </p>
     <pre style="background: var(--solar-base02); color: var(--solar-base3); padding: 0.75rem; border-radius: 4px; overflow-x: auto; font-size: 0.85rem"><code>POST /mcp/
 Content-Type: application/json
@@ -82,20 +82,20 @@ Mcp-Session-Id: &lt;from initialize response&gt;
             {% endfor %}
         {% else %}
             <p style="color: var(--solar-base01); font-style: italic">
-                No fields declared. Submitting will call the tool with
-                empty arguments.
+                No hay campos declarados. Al enviar se llamará la herramienta con
+                argumentos vacíos.
             </p>
         {% endif %}
-        <button type="submit" style="margin-top: 0.5rem">Call {{ tool.name }}</button>
+        <button type="submit" style="margin-top: 0.5rem">Llamar {{ tool.name }}</button>
     </form>
 
     <details style="margin-top: 0.5rem">
-        <summary style="cursor: pointer; color: var(--solar-base01)">raw inputSchema</summary>
+        <summary style="cursor: pointer; color: var(--solar-base01)">inputSchema en bruto</summary>
         <pre style="background: var(--solar-base02); color: var(--solar-base3); padding: 0.5rem; border-radius: 4px; overflow-x: auto; font-size: 0.8rem; margin: 0.5rem 0 0"><code>{{ tool.input_schema_json }}</code></pre>
     </details>
 
     <div class="result" role="status" style="margin-top: 0.5rem">
-        <em style="color: var(--solar-base01)">Submit a form above to call this tool.</em>
+        <em style="color: var(--solar-base01)">Envía el formulario de arriba para llamar esta herramienta.</em>
     </div>
 </section>
 {% endfor %}
@@ -230,7 +230,7 @@ Mcp-Session-Id: &lt;from initialize response&gt;
                 var args = buildArgs(form);
                 var name = form.getAttribute("data-tool-name");
                 var resultEl = form.parentNode.querySelector(".result");
-                resultEl.innerHTML = '<em style="color: var(--solar-base01)">Calling ' + name + ' ...</em>';
+                resultEl.innerHTML = '<em style="color: var(--solar-base01)">Llamando ' + name + '…</em>';
                 rpc("initialize", {
                     protocolVersion: "2024-11-05",
                     capabilities: {},

@@ -173,8 +173,11 @@ class TestGetChatPage:
         assert 'rows="1"' in body
         assert 'aria-busy="false"' in body
         assert 'class="chat-prompt"' in body
-        assert "Enter to send" in body
-        assert "Shift+Enter for newline" in body
+        # Note: the meta hint copy is now in Spanish (per change
+        # 007-playground-ui-polish task 2). The test purpose stays
+        # valid — only the visible-string markers moved.
+        assert "Enter para enviar" in body
+        assert "Shift+Enter para nueva línea" in body
         assert "→" in body
         assert "chat-typing" in body
         assert "resizeInput" in body
@@ -193,7 +196,11 @@ class TestGetChatPage:
         assert 'eventName === "error"' in body
         assert "JSON.parse(dataLine)" in body
         assert "serverErrorMessage" in body
-        assert 'showInlineRetry("Connection lost."' in body
+        # The "Connection lost." message is now in Spanish ("Conexión
+        # perdida.") per task 2 of change 007-playground-ui-polish.
+        # The test purpose — distinguishing a typed error from a
+        # connection drop — stays valid; only the visible string moved.
+        assert 'showInlineRetry("Conexión perdida."' in body
         assert "showInlineRetry(serverErrorMessage" in body
 
     @pytest.mark.asyncio

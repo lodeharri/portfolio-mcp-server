@@ -1,16 +1,16 @@
 {% extends "base.html" %}
 
-{% block title %}Portfolio chat — MCP Playground{% endblock %}
+{% block title %}Chat — Playground MCP{% endblock %}
 
 {% block content %}
 <section class="playground-chat" aria-labelledby="chat-heading">
     <header class="chat-header">
         <div class="chat-heading-group">
-            <p class="chat-eyebrow">Portfolio / agent channel</p>
-            <h1 id="chat-heading">Ask the portfolio</h1>
+            <p class="chat-eyebrow">Portfolio / canal del agente</p>
+            <h1 id="chat-heading">Chatea con el agente</h1>
             <p class="chat-summary">
-                Explore projects, architecture, and the decisions behind the code.
-                Your conversation stays in this browser.
+                Explora los proyectos, la arquitectura y las decisiones detrás del código.
+                Tu conversación se queda en este navegador.
             </p>
         </div>
         <div
@@ -21,48 +21,48 @@
             aria-live="polite"
         >
             <span class="chat-status__dot" aria-hidden="true"></span>
-            <span class="chat-status__label">Ready</span>
+            <span class="chat-status__label">Listo</span>
         </div>
     </header>
 
     <ol
         id="chat-transcript"
         class="chat-transcript"
-        aria-label="Conversation transcript"
+        aria-label="Transcripción de la conversación"
     ></ol>
 
     <form
         id="chat-form"
         class="chat-form"
         autocomplete="off"
-        aria-label="Send a message to the agent"
+        aria-label="Envía un mensaje al agente"
         aria-busy="false"
     >
-        <label for="chat-input" class="visually-hidden">Your message</label>
+        <label for="chat-input" class="visually-hidden">Tu mensaje</label>
         <div class="chat-composer">
             <span class="chat-prompt" aria-hidden="true">&gt;</span>
             <textarea
                 id="chat-input"
                 name="message"
                 class="chat-input"
-                placeholder="Ask about a project, an architectural decision, or the codebase…"
+                placeholder="Pregunta sobre un proyecto, una decisión de arquitectura o el código…"
                 autocomplete="off"
                 maxlength="4000"
                 rows="1"
                 required
-                aria-label="Your message"
+                aria-label="Tu mensaje"
             ></textarea>
             <button
                 id="chat-submit"
                 type="submit"
                 class="chat-submit"
             >
-                <span>Send</span>
+                <span>Enviar</span>
                 <span class="chat-submit__arrow" aria-hidden="true">→</span>
             </button>
         </div>
         <p class="chat-input-meta">
-            Enter to send <span aria-hidden="true">·</span> Shift+Enter for newline
+            Enter para enviar <span aria-hidden="true">·</span> Shift+Enter para nueva línea
         </p>
     </form>
 
@@ -71,13 +71,13 @@
         class="chat-persistence-notice"
         hidden
     >
-        Conversations in this browser are not saved between reloads.
+        Las conversaciones en este navegador no se guardan entre recargas.
     </p>
 
     <noscript>
         <p class="chat-noscript">
-            JavaScript is required for streaming chat. The other five
-            tools are still available at
+            Se requiere JavaScript para el chat en vivo. Las otras cinco
+            herramientas siguen disponibles en
             <a href="/playground"><code>/playground</code></a>.
         </p>
     </noscript>
@@ -243,7 +243,7 @@
         var indicator = document.createElement("span");
         indicator.className = "chat-typing";
         indicator.setAttribute("role", "status");
-        indicator.setAttribute("aria-label", "Agent is thinking");
+        indicator.setAttribute("aria-label", "El agente está pensando");
         for (var i = 0; i < 3; i++) {
             var dot = document.createElement("span");
             dot.className = "chat-typing__dot";
@@ -264,7 +264,7 @@
         meta.className = "chat-message__meta";
         var label = document.createElement("span");
         label.className = "chat-message__role";
-        label.textContent = messageRole === "user" ? "You" : "Agent";
+        label.textContent = messageRole === "user" ? "Tú" : "Agente";
         var time = messageTime(timestamp);
         var timeNode = document.createElement("time");
         timeNode.className = "chat-message__time";
@@ -290,7 +290,7 @@
         if (messageRole === "assistant") {
             var trace = document.createElement("div");
             trace.className = "chat-trace";
-            trace.setAttribute("aria-label", "Tools the agent used");
+            trace.setAttribute("aria-label", "Herramientas que usó el agente");
             li.appendChild(trace);
         }
         li.appendChild(body);
@@ -375,7 +375,7 @@
         var button = document.createElement("button");
         button.type = "button";
         button.className = "chat-retry";
-        button.textContent = "Retry?";
+        button.textContent = "¿Reintentar?";
         button.addEventListener("click", function () {
             li.remove();
             if (typeof onRetry === "function") onRetry();
@@ -440,7 +440,7 @@
 
     async function sendMessage(text) {
         if (!jsAvailable) {
-            showInlineRetry("JavaScript is required for streaming chat.");
+            showInlineRetry("Se requiere JavaScript para el chat en vivo.");
             return;
         }
         if (submitButton.disabled) return;
@@ -467,7 +467,7 @@
         var assistantNode = renderMessage("assistant", "", true);
         var assistantContent = assistantNode.querySelector(".chat-message__content");
 
-        setStatus("streaming", "Agent thinking");
+        setStatus("streaming", "Pensando…");
         setStreaming(true);
 
         var controller = new AbortController();
@@ -487,9 +487,9 @@
             });
         } catch (_networkErr) {
             assistantNode.remove();
-            setStatus("ready", "Ready");
+            setStatus("ready", "Listo");
             setStreaming(false);
-            showInlineRetry("Connection lost.", function () {
+            showInlineRetry("Conexión perdida.", function () {
                 sendMessage(text);
             });
             return;
@@ -497,9 +497,9 @@
 
         if (!res.ok || !res.body) {
             assistantNode.remove();
-            setStatus("ready", "Ready");
+            setStatus("ready", "Listo");
             setStreaming(false);
-            showInlineRetry("Connection lost.", function () {
+            showInlineRetry("Conexión perdida.", function () {
                 sendMessage(text);
             });
             return;
@@ -606,18 +606,18 @@
             if (assistantContent) assistantContent.textContent = assistantAcc;
             assistantNode.dataset.partial = "false";
             appendToHistory("assistant", assistantAcc);
-            setStatus("ready", "Ready");
+            setStatus("ready", "Listo");
             setStreaming(false);
         } else {
             assistantNode.remove();
-            setStatus("ready", "Ready");
+            setStatus("ready", "Listo");
             setStreaming(false);
             if (sawErrorMessage) {
                 showInlineRetry(serverErrorMessage, function () {
                     sendMessage(text);
                 });
             } else {
-                showInlineRetry("Connection lost.", function () {
+                showInlineRetry("Conexión perdida.", function () {
                     sendMessage(text);
                 });
             }
@@ -625,14 +625,14 @@
     }
 
     if (!jsAvailable) {
-        setStatus("unsupported", "JavaScript required");
+        setStatus("unsupported", "Se requiere JavaScript");
         showInlineRetry(
-            "JavaScript is required for streaming chat. Try /playground for the other tools."
+            "Se requiere JavaScript para el chat en vivo. Prueba /playground para las otras herramientas."
         );
         if (submitButton) submitButton.disabled = true;
     } else {
         renderHistory();
-        setStatus("ready", "Ready");
+        setStatus("ready", "Listo");
     }
 
     if (persistenceDisabled) showPersistenceNotice();
