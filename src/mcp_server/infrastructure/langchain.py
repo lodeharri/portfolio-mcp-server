@@ -31,6 +31,23 @@ from langgraph.prebuilt import create_react_agent
 from mcp_server.application.ports.agent import AgentChunk, AgentRequest, AgentResponse
 from mcp_server.application.ports.chunking import Chunk
 
+DEFAULT_AGENT_SYSTEM_PROMPT = (
+    "Eres un asistente técnico que responde preguntas sobre los proyectos "
+    "de un portfolio de software. Sigue estas reglas:\n"
+    "1. Responde siempre en el idioma del usuario.\n"
+    "2. Tienes un presupuesto limitado de herramientas: usa como máximo "
+    "2-3 llamadas a tools por respuesta. Después de obtener resultados "
+    "relevantes, sintetiza la respuesta final inmediatamente.\n"
+    "3. Si una tool no devuelve resultados útiles tras 2 intentos con la "
+    "misma herramienta, responde con lo que sepas o di claramente que no "
+    "encontraste la información.\n"
+    "4. Sé conciso: respuestas cortas y técnicas, no ensayos. La salida "
+    "está limitada a tokens, así que ve al grano.\n"
+    "5. No inventes nombres de archivos, funciones ni APIs. Si no estás "
+    "seguro, dilo.\n"
+    "6. Cita rutas de archivo exactas cuando menciones código."
+)
+
 
 class LangChainChunkingAdapter:
     """Split source text with language-aware LangChain splitters."""
@@ -67,6 +84,11 @@ class LangChainChunkingAdapter:
 
 
 class _MockLangChainAgentAdapter:
+    def __init__(self, *, state_modifier: str = DEFAULT_AGENT_SYSTEM_PROMPT) -> None:
+        # Mirror LangChainAgentAdapter's signature so tests using the
+        # mock don't need extra wiring; the param is ignored by the mock.
+        self._state_modifier = state_modifier
+
     async def run(self, request: AgentRequest, tools: Sequence[Any]) -> AgentResponse:
         return AgentResponse(answer="[mock answer to: hi]")
 
@@ -99,28 +121,43 @@ class LangChainAgentAdapter:
         model: str = "gemini-flash-latest",
         *,
         llm: Any | None = None,
-        max_output_tokens: int = 600,
+        max_output_tokens: int = 1000,
+        state_modifier: str = DEFAULT_AGENT_SYSTEM_PROMPT,
     ) -> None:
-        # ``max_output_tokens=600`` is the 003-playground-ui
+        # ``max_output_tokens=1000`` is the 003-playground-ui
         # llm-prompt-discipline cap (Decision #12 — short-first
         # invariant). The spec's original Pydantic AI field
         # ``UsageLimits.response_tokens_limit`` no longer applies after
         # 005-langchain-integration migrated to LangGraph; the
         # LangChain-native equivalent is the field on the chat model
         # itself. REL-8 finding from PR1's reliability review.
+        # Cap was bumped from 600 → 1000 because 600 was too tight to
+        # synthesize a final answer after seeing tool results on a
+        # typical Spanish response — the agent ran out of tokens before
+        # reaching the closing sentence.
         self._llm = llm or ChatGoogleGenerativeAI(
             model=model,
             api_key=api_key,
             max_output_tokens=max_output_tokens,
         )
+        # ``state_modifier`` is the system prompt threaded into
+        # LangGraph's ``create_react_agent(..., prompt=...)`` kwarg.
+        # The default ``DEFAULT_AGENT_SYSTEM_PROMPT`` enforces the
+        # tool-call budget + language matching required to stop the
+        # "Recursion limit of 11" loop (otherwise the agent never
+        # synthesizes a final answer and keeps calling tools until
+        # LangGraph aborts). The public attribute name ``state_modifier``
+        # mirrors the historical LangGraph kwarg; the call to
+        # ``create_react_agent`` uses the current ``prompt`` kwarg.
+        self._state_modifier = state_modifier
 
     async def run(self, request: AgentRequest, tools: Sequence[Any]) -> AgentResponse:
         tool_functions = [getattr(tool, "fn", tool) for tool in tools]
-        agent = create_react_agent(self._llm, tool_functions)
+        agent = create_react_agent(self._llm, tool_functions, prompt=self._state_modifier)
         messages = [*(request.history or []), {"role": "user", "content": request.question}]
         result = await agent.ainvoke(
             {"messages": messages},
-            config={"recursion_limit": request.max_tool_calls * 2 + 1},
+            config={"recursion_limit": request.max_tool_calls * 3 + 1},
         )
         result_messages = result["messages"]
         tool_calls = [
@@ -155,11 +192,11 @@ class LangChainAgentAdapter:
         contract for both adapters.
         """
         tool_functions = [getattr(tool, "fn", tool) for tool in tools]
-        agent = create_react_agent(self._llm, tool_functions)
+        agent = create_react_agent(self._llm, tool_functions, prompt=self._state_modifier)
         messages = [*(request.history or []), {"role": "user", "content": request.question}]
         async for message, _meta in agent.astream(
             {"messages": messages},
-            config={"recursion_limit": request.max_tool_calls * 2 + 1},
+            config={"recursion_limit": request.max_tool_calls * 3 + 1},
             stream_mode="messages",
         ):
             if not isinstance(message, AIMessageChunk):

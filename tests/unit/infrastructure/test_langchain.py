@@ -57,8 +57,9 @@ async def test_agent_unwraps_tools_and_extracts_calls(monkeypatch: pytest.Monkey
                 ]
             }
 
-    def fake_create_react_agent(llm: Any, tools: list[Any]) -> FakeAgent:
+    def fake_create_react_agent(llm: Any, tools: list[Any], **kwargs: Any) -> FakeAgent:
         captured["tools"] = tools
+        captured["kwargs"] = kwargs
         return FakeAgent()
 
     monkeypatch.setattr(
@@ -77,9 +78,14 @@ async def test_agent_unwraps_tools_and_extracts_calls(monkeypatch: pytest.Monkey
     )
 
     assert captured["tools"] == [tool_function]
-    assert captured["config"] == {"recursion_limit": 7}
+    assert captured["config"] == {"recursion_limit": 10}
     assert response.answer == "portfolio answer"
     assert response.tool_calls == [{"name": "search_code"}]
+    # The default portfolio prompt MUST be threaded through so the
+    # agent has explicit tool-call budget / language instructions.
+    prompt = captured["kwargs"].get("prompt")
+    assert prompt
+    assert "presupuesto" in prompt.lower() or "tool" in prompt.lower()
 
 
 # ---------------------------------------------------------------------------

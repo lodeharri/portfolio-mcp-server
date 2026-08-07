@@ -22,6 +22,7 @@ import asyncio
 import itertools
 import time
 from collections.abc import AsyncIterator
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -96,9 +97,10 @@ def fake_create_react_agent(stub_ai_messages, monkeypatch):
 
     captured: dict[str, Any] = {}
 
-    def _factory(llm: Any, tools: list[Any]) -> _StubLangGraphAgent:
+    def _factory(llm: Any, tools: list[Any], **kwargs: Any) -> _StubLangGraphAgent:
         captured["llm"] = llm
         captured["tools"] = list(tools)
+        captured["kwargs"] = kwargs
         return _StubLangGraphAgent(stub_ai_messages)
 
     monkeypatch.setattr("mcp_server.infrastructure.langchain.create_react_agent", _factory)
@@ -138,7 +140,8 @@ class TestLangChainAgentAdapterStream:
                 return
                 yield  # pragma: no cover
 
-        def _factory(llm: Any, tools: list[Any]) -> _CaptureAgent:
+        def _factory(llm: Any, tools: list[Any], **kwargs: Any) -> _CaptureAgent:
+            captured["kwargs"] = kwargs
             return _CaptureAgent()
 
         monkeypatch.setattr("mcp_server.infrastructure.langchain.create_react_agent", _factory)
@@ -148,7 +151,11 @@ class TestLangChainAgentAdapterStream:
             pass
 
         assert captured["stream_mode"] == "messages"
-        assert captured["config"] == {"recursion_limit": 9}  # 4 * 2 + 1
+        assert captured["config"] == {"recursion_limit": 13}  # 4 * 3 + 1
+        # The default portfolio prompt MUST be threaded through.
+        prompt = captured["kwargs"].get("prompt")
+        assert prompt
+        assert "presupuesto" in prompt.lower() or "tool" in prompt.lower()
 
     @pytest.mark.asyncio
     async def test_yields_one_token_chunk_per_ai_message(
@@ -158,8 +165,9 @@ class TestLangChainAgentAdapterStream:
 
         recorded: dict[str, Any] = {}
 
-        def _factory(llm: Any, tools: list[Any]) -> _StubLangGraphAgent:
+        def _factory(llm: Any, tools: list[Any], **kwargs: Any) -> _StubLangGraphAgent:
             recorded["tools"] = list(tools)
+            recorded["kwargs"] = kwargs
             return _StubLangGraphAgent(stub_ai_messages)
 
         monkeypatch.setattr("mcp_server.infrastructure.langchain.create_react_agent", _factory)
@@ -179,7 +187,7 @@ class TestLangChainAgentAdapterStream:
     async def test_yields_at_least_one_chunk_within_5s(self, monkeypatch) -> None:
         """Real path MUST yield ≥1 chunk within 5s (PR2a integration gate)."""
 
-        def _factory(llm: Any, tools: list[Any]) -> _StubLangGraphAgent:
+        def _factory(llm: Any, tools: list[Any], **kwargs: Any) -> _StubLangGraphAgent:
             return _StubLangGraphAgent(
                 [(AIMessageChunk(content="token"), {"langgraph_node": "agent"})]
             )
@@ -210,7 +218,7 @@ class TestLangChainAgentAdapterStream:
             (HumanMessage(content="follow-up"), {}),
         ]
 
-        def _factory(llm: Any, tools: list[Any]) -> _StubLangGraphAgent:
+        def _factory(llm: Any, tools: list[Any], **kwargs: Any) -> _StubLangGraphAgent:
             return _StubLangGraphAgent(non_ai_messages)
 
         monkeypatch.setattr("mcp_server.infrastructure.langchain.create_react_agent", _factory)
@@ -229,11 +237,15 @@ class TestLangChainAgentAdapterStream:
         assert chunks[-1].kind == "done"
 
     @pytest.mark.asyncio
-    async def test_recursion_limit_is_max_tool_calls_times_2_plus_1(self, monkeypatch) -> None:
-        """Recursion limit MUST equal ``request.max_tool_calls * 2 + 1``.
+    async def test_recursion_limit_is_max_tool_calls_times_3_plus_1(self, monkeypatch) -> None:
+        """Recursion limit MUST equal ``request.max_tool_calls * 3 + 1``.
 
-        Same formula as ``run`` (PR1 contract). Triangulation: vary
-        ``max_tool_calls`` to confirm the formula scales linearly.
+        ``* 3 + 1`` (one extra "answer attempt" step beyond the 6 of
+        strict parity) is the policy that stops the "Recursion limit
+        of 11" loop: the budget must allow one more turn than the
+        tool calls + their responses to give the LLM room to commit
+        to a final answer. Same formula as ``run``. Triangulation:
+        vary ``max_tool_calls`` to confirm the formula scales linearly.
         """
         captured: list[int] = []
 
@@ -251,7 +263,7 @@ class TestLangChainAgentAdapterStream:
                 return
                 yield  # pragma: no cover
 
-        def _factory(llm: Any, tools: list[Any]) -> _CaptureAgent:
+        def _factory(llm: Any, tools: list[Any], **kwargs: Any) -> _CaptureAgent:
             return _CaptureAgent()
 
         monkeypatch.setattr("mcp_server.infrastructure.langchain.create_react_agent", _factory)
@@ -263,13 +275,162 @@ class TestLangChainAgentAdapterStream:
             ):
                 pass
 
-        assert captured == [3, 11, 17]  # 1*2+1, 5*2+1, 8*2+1
+        assert captured == [4, 16, 25]  # 1*3+1, 5*3+1, 8*3+1
+
+    @pytest.mark.asyncio
+    async def test_state_modifier_passed_to_create_react_agent_for_run(self, monkeypatch) -> None:
+        """``LangChainAgentAdapter`` MUST thread its ``state_modifier`` through to
+        ``create_react_agent`` so the ReAct agent gets explicit budget /
+        language / portfolio-context instructions.
+
+        LangGraph's ``create_react_agent(..., prompt=...)`` is the
+        current API for setting the system prompt (the historical
+        ``state_modifier`` kwarg was renamed). The adapter exposes the
+        parameter as ``state_modifier`` for API clarity and passes it
+        through to ``create_react_agent`` as ``prompt``.
+        """
+        captured: dict[str, Any] = {}
+
+        class _CaptureAgent:
+            async def ainvoke(
+                self, payload: dict[str, Any], config: dict[str, Any] | None = None
+            ) -> dict[str, Any]:
+                return {"messages": [SimpleNamespace(content="ok", tool_calls=[])]}
+
+        def _factory(llm: Any, tools: list[Any], **kwargs: Any) -> _CaptureAgent:
+            captured["kwargs"] = kwargs
+            return _CaptureAgent()
+
+        monkeypatch.setattr("mcp_server.infrastructure.langchain.create_react_agent", _factory)
+
+        custom_prompt = "You are a portfolio assistant. Respond in Spanish."
+        adapter = LangChainAgentAdapter(api_key="dummy", llm=object(), state_modifier=custom_prompt)
+
+        await adapter.run(AgentRequest(question="hi"), [])
+
+        assert captured["kwargs"].get("prompt") == custom_prompt
+
+    @pytest.mark.asyncio
+    async def test_state_modifier_passed_to_create_react_agent_for_stream(
+        self, monkeypatch
+    ) -> None:
+        """Same threading contract MUST hold for the ``stream`` path."""
+        captured: dict[str, Any] = {}
+
+        class _CaptureAgent:
+            async def astream(
+                self,
+                payload: dict[str, Any],
+                config: dict[str, Any] | None = None,
+                *,
+                stream_mode: str = "values",
+            ) -> AsyncIterator[tuple[Any, dict[str, Any]]]:
+                return
+                yield  # pragma: no cover
+
+        def _factory(llm: Any, tools: list[Any], **kwargs: Any) -> _CaptureAgent:
+            captured["kwargs"] = kwargs
+            return _CaptureAgent()
+
+        monkeypatch.setattr("mcp_server.infrastructure.langchain.create_react_agent", _factory)
+
+        custom_prompt = "Stream-time portfolio prompt."
+        adapter = LangChainAgentAdapter(api_key="dummy", llm=object(), state_modifier=custom_prompt)
+
+        async for _ in adapter.stream(AgentRequest(question="hi"), []):
+            pass
+
+        assert captured["kwargs"].get("prompt") == custom_prompt
+
+    @pytest.mark.asyncio
+    async def test_state_modifier_consistent_between_run_and_stream(self, monkeypatch) -> None:
+        """The SAME ``state_modifier`` MUST be passed to both ``run`` and
+        ``stream`` — divergent prompts would give inconsistent UX
+        between the two paths.
+        """
+        captured: list[dict[str, Any]] = []
+
+        class _CaptureAgent:
+            async def ainvoke(
+                self, payload: dict[str, Any], config: dict[str, Any] | None = None
+            ) -> dict[str, Any]:
+                return {"messages": [SimpleNamespace(content="ok", tool_calls=[])]}
+
+            async def astream(
+                self,
+                payload: dict[str, Any],
+                config: dict[str, Any] | None = None,
+                *,
+                stream_mode: str = "values",
+            ) -> AsyncIterator[tuple[Any, dict[str, Any]]]:
+                return
+                yield  # pragma: no cover
+
+        def _factory(llm: Any, tools: list[Any], **kwargs: Any) -> _CaptureAgent:
+            captured.append(kwargs)
+            return _CaptureAgent()
+
+        monkeypatch.setattr("mcp_server.infrastructure.langchain.create_react_agent", _factory)
+
+        shared_prompt = "Budget: 2 tool calls. Respond in Spanish."
+        adapter = LangChainAgentAdapter(api_key="dummy", llm=object(), state_modifier=shared_prompt)
+
+        await adapter.run(AgentRequest(question="hi"), [])
+        async for _ in adapter.stream(AgentRequest(question="hi"), []):
+            pass
+
+        assert len(captured) == 2
+        assert captured[0].get("prompt") == shared_prompt
+        assert captured[1].get("prompt") == shared_prompt
+        assert captured[0].get("prompt") == captured[1].get("prompt")
+
+    @pytest.mark.asyncio
+    async def test_default_state_modifier_is_portfolio_prompt(self, monkeypatch) -> None:
+        """When the caller omits ``state_modifier``, the adapter MUST use the
+        module-level portfolio prompt (not an empty string, not the
+        LangGraph default English template).
+        """
+        captured: dict[str, Any] = {}
+
+        class _CaptureAgent:
+            async def astream(
+                self,
+                payload: dict[str, Any],
+                config: dict[str, Any] | None = None,
+                *,
+                stream_mode: str = "values",
+            ) -> AsyncIterator[tuple[Any, dict[str, Any]]]:
+                return
+                yield  # pragma: no cover
+
+        def _factory(llm: Any, tools: list[Any], **kwargs: Any) -> _CaptureAgent:
+            captured["kwargs"] = kwargs
+            return _CaptureAgent()
+
+        monkeypatch.setattr("mcp_server.infrastructure.langchain.create_react_agent", _factory)
+
+        adapter = LangChainAgentAdapter(api_key="dummy", llm=object())
+
+        async for _ in adapter.stream(AgentRequest(question="hi"), []):
+            pass
+
+        prompt = captured["kwargs"].get("prompt")
+        assert isinstance(prompt, str) and prompt.strip(), (
+            "default state_modifier must be a non-empty string"
+        )
+        # The portfolio prompt MUST mention the user-language-matching rule
+        # and the tool-call budget — the two instructions that fix the
+        # "Recursion limit of 11" loop.
+        assert "idioma" in prompt, "default prompt must mention language matching"
+        assert "herramientas" in prompt or "tool" in prompt.lower(), (
+            "default prompt must mention the tool-call budget"
+        )
 
     @pytest.mark.asyncio
     async def test_done_chunk_terminates_stream(self, monkeypatch) -> None:
         """A terminal ``AgentChunk(kind='done', data='')`` MUST be yielded last."""
 
-        def _factory(llm: Any, tools: list[Any]) -> _StubLangGraphAgent:
+        def _factory(llm: Any, tools: list[Any], **kwargs: Any) -> _StubLangGraphAgent:
             return _StubLangGraphAgent(
                 [
                     (AIMessageChunk(content="hello"), {}),
@@ -298,7 +459,7 @@ class TestLangChainAgentAdapterStream:
         nonsensical as a chat token. The adapter must drop those.
         """
 
-        def _factory(llm: Any, tools: list[Any]) -> _StubLangGraphAgent:
+        def _factory(llm: Any, tools: list[Any], **kwargs: Any) -> _StubLangGraphAgent:
             # ``AIMessageChunk(content=None)`` is rejected by pydantic
             # validation in LangChain — use ``model_construct`` to
             # build an instance that bypasses the validator (matches
@@ -352,7 +513,7 @@ class TestLangChainAgentAdapterStream:
         )
         monkeypatch.setattr(
             "mcp_server.infrastructure.langchain.create_react_agent",
-            lambda llm, tools: llm,
+            lambda llm, tools, **kwargs: llm,
         )
 
         adapter = LangChainAgentAdapter(api_key="dummy")

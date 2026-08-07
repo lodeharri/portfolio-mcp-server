@@ -13,7 +13,7 @@ from mcp_server.domain.exceptions import RateLimitExceeded
 from mcp_server.security.audit import AuditLogger
 from mcp_server.security.output_sanitizer import OutputSanitizer
 
-DEFAULT_MAX_TOOL_CALLS = 5
+DEFAULT_MAX_TOOL_CALLS = 3
 DEFAULT_CLIENT_IP = "127.0.0.1"
 
 __all__ = [

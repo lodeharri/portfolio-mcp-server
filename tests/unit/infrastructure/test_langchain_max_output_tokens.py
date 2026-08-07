@@ -1,10 +1,13 @@
 """Regression tests for the LLM prompt discipline caps.
 
 The 003-playground-ui llm-prompt-discipline spec (PR2a subset) caps
-``ask_portfolio`` at ``max_output_tokens=600`` (Decision #12 — short-first
+``ask_portfolio`` at ``max_output_tokens=1000`` (Decision #12 — short-first
 invariant; the spec author reduced the agent's per-call budget by ~30 %
 from the open-ended default so the recruiter-demo response stays
-focussed).
+focussed). The cap was bumped from 600 to 1000 because the previous
+value was too tight to write a final answer after seeing tool results
+(on a typical Spanish response, the model ran out of tokens before
+reaching the call-to-action sentence).
 
 The spec's original field name was ``UsageLimits.response_tokens_limit``
 (Pydantic AI 2.x), but the project migrated to LangChain/LangGraph in
@@ -44,8 +47,13 @@ class _CaptureGoogleGenerativeAI:
         return ChatGoogleGenerativeAI(**kwargs)
 
 
-def test_langchain_adapter_passes_max_output_tokens_600(monkeypatch: pytest.MonkeyPatch) -> None:
-    """``LangChainAgentAdapter(api_key=...)`` MUST build its LLM with ``max_output_tokens=600``."""
+def test_langchain_adapter_passes_max_output_tokens_1000(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``LangChainAgentAdapter(api_key=...)`` MUST build its LLM with ``max_output_tokens=1000``.
+
+    The 600 cap was too tight to write a final answer after a tool
+    call — the agent would run out of tokens synthesizing the closing
+    sentence. 1000 fits a typical Spanish response with room to spare.
+    """
     capture = _CaptureGoogleGenerativeAI()
     monkeypatch.setattr(
         "mcp_server.infrastructure.langchain.ChatGoogleGenerativeAI",
@@ -56,7 +64,7 @@ def test_langchain_adapter_passes_max_output_tokens_600(monkeypatch: pytest.Monk
 
     assert len(capture.calls) == 1
     kwargs = capture.calls[0]
-    assert kwargs["max_output_tokens"] == 600
+    assert kwargs["max_output_tokens"] == 1000
     # Sanity: the model + api_key are also passed (no regression).
     assert kwargs["model"] == "gemini-flash-latest"
     assert kwargs["api_key"] == "dummy-key"
@@ -106,7 +114,7 @@ def test_factory_picks_real_adapter_for_non_empty_key(monkeypatch: pytest.Monkey
 
     Belt-and-suspenders: composition wires the real adapter through
     ``AGENT_MODEL_NAME``; if a future change accidentally flips the
-    factory to mock mode under a populated key, the 600-cap field
+    factory to mock mode under a populated key, the 1000-cap field
     silently disappears and the ask_portfolio responses balloon.
     """
     monkeypatch.setattr(
@@ -124,5 +132,5 @@ def test_factory_picks_real_adapter_for_non_empty_key(monkeypatch: pytest.Monkey
     assert not isinstance(adapter, _MockLangChainAgentAdapter), (
         "create_langchain_agent must NOT return the mock adapter when api_key is non-empty"
     )
-    # Real adapter's underlying LLM has the 600 cap.
-    assert getattr(adapter._llm, "max_output_tokens", None) == 600
+    # Real adapter's underlying LLM has the 1000 cap.
+    assert getattr(adapter._llm, "max_output_tokens", None) == 1000
