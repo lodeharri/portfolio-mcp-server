@@ -253,7 +253,7 @@ article.playground-match pre {
     word-break: break-word;
 }
 
-/* --- MCP Explorer hero (playground.html top section) --- */
+/* --- MCP Explorer hero (top section used by index.html + mcp_browser.html) --- */
 
 .explorer-hero {
     margin: 0 0 2rem;
@@ -283,24 +283,6 @@ article.playground-match pre {
 
 .explorer-hero strong {
     color: var(--solar-base02);
-}
-
-/* --- CTA card variant (ask_portfolio: links to /chat) --- */
-
-section.playground-form-card--cta {
-    border-left: 4px solid var(--solar-cyan);
-    background: linear-gradient(
-        180deg,
-        var(--playground-card-bg) 0%,
-        var(--solar-base2) 100%
-    );
-}
-
-section.playground-form-card--cta h2 {
-    color: var(--solar-cyan);
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
 }
 
 /* --- Inline badges --- */

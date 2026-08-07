@@ -65,8 +65,7 @@ async def chat_page(request: Request) -> HTMLResponse:
     The template extends ``base.html`` and embeds the chat client JS
     inline (per the PR2b MVP scope — no separate ``chat.js`` static
     file). The shared :class:`Jinja2Templates` environment keeps
-    navigation + vendored HTMX consistent with the rest of the
-    playground surface.
+    navigation + vendored HTMX consistent with the rest of the web UI.
     """
     return templates.TemplateResponse(
         request=request,
@@ -210,7 +209,7 @@ def build_chat_router() -> APIRouter:
     router (rather than attaching to ``build_web_router``'s own
     ``APIRouter``) keeps the chat surface self-contained and lets the
     unit tests construct a fresh mini-app without dragging the
-    landing-page / playground surface along.
+    landing-page + ``/mcp-ui`` explorer surface along.
 
     The POST handler is registered with
     ``response_class=ServerSentEvent`` so FastAPI's routing layer

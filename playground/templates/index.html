@@ -10,7 +10,7 @@
         <strong>{{ projects|length }} proyecto{{ 's' if projects|length != 1 else '' }} de portfolio</strong>
         a través de seis herramientas — listar proyectos, búsqueda semántica de código,
         resúmenes de arquitectura, digestos de README, diagramas de arquitectura y un agente de lenguaje natural.
-        Haz clic en <em>Probar el playground MCP</em> más abajo para invocar cada herramienta desde el navegador.
+        Haz clic en <em>Explorador MCP</em> más abajo para invocar cada herramienta desde el navegador.
     </p>
 </header>
 
@@ -26,7 +26,7 @@
             <br>
             <span class="chunks">{{ project.index_chunk_count }} chunks indexados</span>
             ·
-            <a href="/playground">abrir en playground</a>
+            <a href="/mcp-ui">abrir en el explorador</a>
         </li>
         {% endfor %}
     </ul>
@@ -36,7 +36,7 @@
 </section>
 
 <div class="playground-cta">
-    <a href="/playground">Probar el playground MCP</a>
+    <a href="/mcp-ui">Explorador MCP</a>
     <a class="secondary" href="/chat">Chatear con el agente del portfolio</a>
 </div>
 {% endblock %}

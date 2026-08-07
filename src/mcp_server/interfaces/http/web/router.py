@@ -3,18 +3,22 @@
 The router exposes:
 
 * ``GET /`` — landing page (project list + CTAs).
-* ``GET /playground`` — the form-cards page.
-* ``POST /playground/api/{tool_name}`` — five fragment endpoints
-  (registered by ``register_playground_routes``).
+* ``GET /mcp-ui`` — the browser MCP explorer (auto-generated from
+  the JSON-RPC ``/mcp`` transport tool registry). This is the sole
+  browser-facing tool surface; the old ``/playground`` hand-crafted
+  form-cards page was removed because it duplicated the tool surface
+  without exercising the real MCP transport.
+* ``POST /chat/stream`` + ``GET /chat`` — streaming chat (mounted
+  via :func:`build_chat_router`).
 * ``GET /static/*`` — vendored HTMX and Solarized Phosphor style sheet,
   served from ``playground/static/`` with
   ``Cache-Control: public, max-age=31536000, immutable``.
 
 The router is mounted by ``create_app()`` between ``/healthz`` and the
-``/mcp`` sub-app mount, per change 003-playground-ui (playground-ui spec).
-Hexagonal contract: the package imports application use cases /
-domain entities only — never ``infrastructure/``. The composition root
-is the only place concrete adapters are wired.
+``/mcp`` sub-app mount. Hexagonal contract: the package imports
+application use cases / domain entities only — never
+``infrastructure/``. The composition root is the only place concrete
+adapters are wired.
 """
 
 from __future__ import annotations
@@ -27,7 +31,6 @@ from fastapi.staticfiles import StaticFiles
 
 from mcp_server.interfaces.http.web.chat import build_chat_router
 from mcp_server.interfaces.http.web.paths import resolve_playground_subdir
-from mcp_server.interfaces.http.web.playground import register_playground_routes
 from mcp_server.interfaces.http.web.templates import templates
 
 __all__ = ["build_web_router"]
@@ -105,25 +108,6 @@ def build_web_router() -> APIRouter:
             status_code=200,
         )
 
-    @router.get("/playground", response_class=HTMLResponse, name="playground_index")
-    async def playground_index(request: Request) -> HTMLResponse:
-        """Render the form-cards page. Passes through the project list
-        so the datalist can suggest ``project_id`` values.
-        """
-        composition = getattr(request.app.state, "composition", None)
-        projects = []
-        if composition is not None:
-            try:
-                projects = composition.list_projects_use_case.execute()
-            except Exception:
-                projects = []
-        return templates.TemplateResponse(
-            request=request,
-            name="playground.html",
-            context={"projects": projects},
-            status_code=200,
-        )
-
     @router.get(
         "/static/healthz",
         include_in_schema=False,
@@ -139,16 +123,11 @@ def build_web_router() -> APIRouter:
         """
         return Response(status_code=404)
 
-    # The five ``POST /playground/api/{tool_name}`` endpoints
-    # live in the playground module — register them against this
-    # router so the prefix sits at the same place.
-    register_playground_routes(router)
-
     # PR2b — streaming chat surface (stateful browser, stateless
     # server). ``build_chat_router`` returns its own APIRouter so the
     # chat surface is self-contained; mounting it here makes
     # ``GET /chat`` and ``POST /chat/stream`` part of the same web
-    # surface as the playground forms.
+    # surface as the landing + ``/mcp-ui`` explorer.
     router.include_router(build_chat_router())
 
     # Mount ``/static/`` last so all routes above resolve first.

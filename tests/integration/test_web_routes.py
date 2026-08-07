@@ -1,18 +1,18 @@
-"""Integration tests for the browser-facing routes (PR1 surface).
+"""Integration tests for the browser-facing routes.
 
-The web router exposes three user-facing pages (PR1 lands two of
-them — ``GET /`` and ``GET /playground``) plus the five ``POST
-/playground/api/{tool_name}`` form endpoints. These integration
-tests exercise the wired app via :class:`fastapi.testclient.TestClient`
-and assert:
+The web router exposes the landing page (``GET /``), the auto-generated
+MCP explorer (``GET /mcp-ui``), and the streaming chat surface
+(``GET /chat`` + ``POST /chat/stream``). These integration tests
+exercise the wired app via :class:`fastapi.testclient.TestClient` and
+assert:
 
 * ``GET /`` returns 200 ``text/html``, lists every manifest-declared
-  project, carries both CTAs, and renders without 500 even when the
-  SQLite vector index is absent (``index_chunk_count == 0`` fallback).
-* ``GET /playground`` returns 200 ``text/html``, renders exactly five
-  forms with hx-post targeting every form endpoint, references both
-  vendored static assets (HTMX + style.css) verbatim, and contains
-  no external CDN URL for HTMX.
+  project, carries the CTAs (``/mcp-ui`` + ``/chat``), and renders
+  without 500 even when the SQLite vector index is absent
+  (``index_chunk_count == 0`` fallback).
+* ``GET /mcp-ui`` returns 200 ``text/html`` and is the sole
+  browser-facing tool surface (the old ``/playground`` form-cards
+  page and its five form endpoints were removed in Phase 2).
 * The web router is mounted at the documented position: between
   ``/healthz`` (existing) and ``/mcp`` (existing), and
   ``create_app(...).url_path_for(\"landing\")`` resolves ``/``.
@@ -80,11 +80,13 @@ class TestLandingRoute:
         for project in projects:
             assert project.id in text, f"landing page must surface project id {project.id!r}"
 
-    def test_landing_has_playground_cta_and_mcp_cta(self, client: object) -> None:
-        """Both CTAs (playground + MCP) MUST be present on the landing page."""
+    def test_landing_has_mcp_ui_cta_and_chat_cta(self, client: object) -> None:
+        """The two CTAs (``/mcp-ui`` explorer + ``/chat``) MUST be present
+        on the landing page. ``/playground`` is gone (Phase 2 cleanup).
+        """
         text = client.get("/").text  # type: ignore[attr-defined]
-        assert 'href="/playground"' in text
-        assert 'href="/mcp"' in text
+        assert 'href="/mcp-ui"' in text
+        assert 'href="/chat"' in text
 
     def test_landing_renders_with_zero_index(self, client: object) -> None:
         """When ``data/index.sqlite`` is absent, ``index_chunk_count``
@@ -102,78 +104,45 @@ class TestLandingRoute:
 
 
 # ---------------------------------------------------------------------------
-# GET /playground — form cards
-# ---------------------------------------------------------------------------
-
-
-EXPECTED_FORM_TOOLS: tuple[str, ...] = (
-    "list_projects",
-    "search_code",
-    "explain_architecture",
-    "summarize_readme",
-    "get_architecture_diagram",
-)
-
-
-class TestPlaygroundRoute:
-    def test_playground_returns_200_html(self, client: object) -> None:
-        response = client.get("/playground")  # type: ignore[attr-defined]
-        assert response.status_code == 200
-        assert response.headers["content-type"].startswith("text/html")
-
-    def test_playground_renders_six_forms(self, client: object) -> None:
-        """The page MUST render exactly six <form> elements — five
-        non-agent MCP tools plus ask_portfolio (which redirects to /chat
-        with the question pre-filled).
-        """
-        text = client.get("/playground").text  # type: ignore[attr-defined]
-        assert text.count("<form") == 6, (
-            f"playground page must have exactly 6 forms, found {text.count('<form')}"
-        )
-
-    def test_playground_forms_target_their_endpoints(self, client: object) -> None:
-        """Each form MUST target its dedicated POST /playground/api/<tool>."""
-        text = client.get("/playground").text  # type: ignore[attr-defined]
-        for tool in EXPECTED_FORM_TOOLS:
-            endpoint = f"/playground/api/{tool}"
-            assert endpoint in text, f"playground page must reference endpoint {endpoint!r}"
-
-    def test_playground_references_both_static_assets(self, client: object) -> None:
-        """Both vendored assets (HTMX + style.css) MUST be referenced
-        in the rendered HTML so the browser can fetch them.
-        """
-        text = client.get("/playground").text  # type: ignore[attr-defined]
-        assert "/static/htmx.min.js" in text
-        assert "/static/style.css" in text
-
-    def test_playground_no_htmx_cdn_reference(self, client: object) -> None:
-        """The page MUST NOT reference any external CDN for HTMX —
-        Decision #1: zero outbound at page load."""
-        text = client.get("/playground").text  # type: ignore[attr-defined]
-        for forbidden in (
-            "cdn.jsdelivr.net",
-            "unpkg.com",
-            "cdnjs.cloudflare.com",
-        ):
-            assert forbidden not in text, f"playground page references forbidden CDN {forbidden!r}"
-
-    def test_playground_native_fallback_action_attributes(self, client: object) -> None:
-        """Each form MUST include an ``action=`` attribute pointing to
-        the same endpoint so browsers without JavaScript still POST to
-        the right place. The native fallback is part of the spec.
-        """
-        text = client.get("/playground").text  # type: ignore[attr-defined]
-        for tool in EXPECTED_FORM_TOOLS:
-            # Forms have either action="/playground/api/<tool>" or hx-post.
-            assert (
-                f'action="/playground/api/{tool}"' in text
-                or f'hx-post="/playground/api/{tool}"' in text
-            ), f"tool {tool!r} must have action or hx-post wired"
-
-
-# ---------------------------------------------------------------------------
 # Web router skeleton
 # ---------------------------------------------------------------------------
+
+
+class TestPlaygroundSurfaceRemoved:
+    """Phase 2 cleanup — ``/playground`` and the five form endpoints were
+    removed because ``/mcp-ui`` is the sole browser-facing tool surface.
+
+    The routes must 404 (not 405, not 500); the form endpoints must
+    not accept POSTs that hit use cases directly. ``/mcp-ui`` remains.
+    """
+
+    def test_get_playground_returns_404(self, client: object) -> None:
+        response = client.get("/playground")  # type: ignore[attr-defined]
+        assert response.status_code == 404, (
+            "GET /playground must 404 — /mcp-ui is the sole browser tool surface"
+        )
+
+    def test_post_playground_api_search_code_returns_404(self, client: object) -> None:
+        response = client.post(  # type: ignore[attr-defined]
+            "/playground/api/search_code",
+            data={"query": "x"},
+        )
+        assert response.status_code == 404, (
+            "POST /playground/api/search_code must 404 — the form endpoint "
+            "surface is gone; callers must use the /mcp JSON-RPC transport"
+        )
+
+    def test_post_playground_api_list_projects_returns_404(self, client: object) -> None:
+        response = client.post("/playground/api/list_projects")  # type: ignore[attr-defined]
+        assert response.status_code == 404, (
+            "POST /playground/api/list_projects must 404 — surface removed"
+        )
+
+    def test_mcp_ui_still_200(self, client: object) -> None:
+        """Sanity check: the surviving tool surface is still reachable."""
+        response = client.get("/mcp-ui")  # type: ignore[attr-defined]
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/html")
 
 
 class TestWebRouterSkeleton:

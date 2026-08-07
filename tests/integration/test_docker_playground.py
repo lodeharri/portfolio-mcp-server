@@ -1,11 +1,10 @@
 """Integration tests for the playground assets in the runtime image.
 
-Per change 003-playground-ui task 1.9.2 (``dockerfile-playground``
-spec):
+Per the ``dockerfile-playground`` spec:
 
 * The runtime image MUST contain ``/app/playground/`` with the
   vendored HTMX, the Solarized Phosphor style sheet, and the
-  Jinja2 templates (base.html, index.html, playground.html).
+  Jinja2 templates (base.html, index.html, chat.html, mcp_browser.html).
 * The vendored HTMX banner MUST start with the embedded version
   string (``version:"1.9.10"``); the spec's
   ``starts with /* htmx.org */`` claim refers to legacy htmx 0.x —
@@ -120,30 +119,37 @@ class TestPlaygroundInRuntimeImage:
 
     def test_base_html_in_image(self, built_image) -> None:
         head = _run(
-            ["docker", "run", "--rm", built_image, "head", "-c", "200",
-             "/app/playground/templates/base.html"]
+            [
+                "docker",
+                "run",
+                "--rm",
+                built_image,
+                "head",
+                "-c",
+                "200",
+                "/app/playground/templates/base.html",
+            ]
         )
         assert head.returncode == 0, f"docker run failed: {head.stderr}"
         assert b"<html" in head.stdout.encode("utf-8", errors="replace") or "html" in head.stdout
 
     def test_index_html_in_image(self, built_image) -> None:
         result = _run(
-            ["docker", "run", "--rm", built_image, "test", "-f",
-             "/app/playground/templates/index.html"]
+            [
+                "docker",
+                "run",
+                "--rm",
+                built_image,
+                "test",
+                "-f",
+                "/app/playground/templates/index.html",
+            ]
         )
         assert result.returncode == 0, "index.html must ship in the image"
 
-    def test_playground_html_in_image(self, built_image) -> None:
-        result = _run(
-            ["docker", "run", "--rm", built_image, "test", "-f",
-             "/app/playground/templates/playground.html"]
-        )
-        assert result.returncode == 0, "playground.html must ship in the image"
-
     def test_style_css_in_image(self, built_image) -> None:
         result = _run(
-            ["docker", "run", "--rm", built_image, "test", "-f",
-             "/app/playground/static/style.css"]
+            ["docker", "run", "--rm", built_image, "test", "-f", "/app/playground/static/style.css"]
         )
         assert result.returncode == 0, "style.css must ship in the image"
 
@@ -153,8 +159,15 @@ class TestPlaygroundInRuntimeImage:
         we check the embedded version string instead.
         """
         ls = _run(
-            ["docker", "run", "--rm", built_image, "ls", "-la",
-             "/app/playground/static/htmx.min.js"]
+            [
+                "docker",
+                "run",
+                "--rm",
+                built_image,
+                "ls",
+                "-la",
+                "/app/playground/static/htmx.min.js",
+            ]
         )
         assert ls.returncode == 0, f"docker run failed: {ls.stderr}"
         # Parse the size from `ls -la` (5th column = bytes).
@@ -171,8 +184,7 @@ class TestPlaygroundInRuntimeImage:
         bytes reach the runtime image unchanged.
         """
         cat = _run(
-            ["docker", "run", "--rm", built_image, "cat",
-             "/app/playground/static/htmx.min.js"]
+            ["docker", "run", "--rm", built_image, "cat", "/app/playground/static/htmx.min.js"]
         )
         assert cat.returncode == 0, f"docker run failed: {cat.stderr}"
         assert _HTMX_VERSION_MARKER in cat.stdout.encode("utf-8", errors="replace"), (
@@ -184,8 +196,7 @@ class TestPlaygroundInRuntimeImage:
         user (matching the manifest's per-container user context).
         """
         stat = _run(
-            ["docker", "run", "--rm", built_image, "stat", "-c",
-             "%U:%G", "/app/playground"]
+            ["docker", "run", "--rm", built_image, "stat", "-c", "%U:%G", "/app/playground"]
         )
         assert stat.returncode == 0, f"docker run failed: {stat.stderr}"
         assert stat.stdout.strip() == "mcp:mcp", (
@@ -204,8 +215,13 @@ class TestVendoredHtmxNoCdnReferences:
         for forbidden in ("unpkg.com", "cdn.jsdelivr.net"):
             result = _run(
                 [
-                    "docker", "run", "--rm", built_image,
-                    "grep", "-l", forbidden,
+                    "docker",
+                    "run",
+                    "--rm",
+                    built_image,
+                    "grep",
+                    "-l",
+                    forbidden,
                     "/app/playground/static/htmx.min.js",
                 ]
             )

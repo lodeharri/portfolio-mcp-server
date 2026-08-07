@@ -280,17 +280,25 @@ class TestBaseTemplateSpanishTranslation:
         nav_body = nav_match.group(1)
         assert ">Inicio<" in nav_body, "the Home nav link must read 'Inicio' (Spanish for Home)"
 
-    def test_playground_nav_link_label_kept(self, web_client: object) -> None:
-        """The Playground nav link MUST keep the "Playground" term — it's
-        a recognized loanword in Spanish dev vocabulary and the
-        portfolio's core demo surface.
+    def test_playground_nav_link_removed(self, web_client: object) -> None:
+        """The /playground nav link MUST be gone — /mcp-ui is the sole
+        browser-facing tool surface (Phase 2 cleanup).
         """
         text = web_client.get("/").text  # type: ignore[attr-defined]
         nav_match = re.search(r"<nav\b[^>]*>(.*?)</nav>", text, re.DOTALL)
         nav_body = nav_match.group(1)
-        assert ">Playground<" in nav_body, (
-            "the Playground nav link must keep the 'Playground' label "
-            "(recognized loanword in Spanish dev vocabulary)"
+        assert 'href="/playground"' not in nav_body, (
+            "the nav still links to /playground — Phase 2 removes the "
+            "parallel hand-crafted surface; /mcp-ui is the only tool link"
+        )
+
+    def test_mcp_browser_nav_link_kept(self, web_client: object) -> None:
+        """The MCP browser nav link MUST still point at /mcp-ui."""
+        text = web_client.get("/").text  # type: ignore[attr-defined]
+        nav_match = re.search(r"<nav\b[^>]*>(.*?)</nav>", text, re.DOTALL)
+        nav_body = nav_match.group(1)
+        assert 'href="/mcp-ui"' in nav_body, (
+            "the nav must still link to /mcp-ui (the sole browser tool surface)"
         )
 
     def test_mcp_browser_nav_link_label_is_explorador_mcp(self, web_client: object) -> None:
@@ -320,9 +328,9 @@ class TestIndexPageSpanishTranslation:
     * Page title: "Harrison Rodriguez — Servidor MCP de Portfolio"
     * Section heading: "Proyectos indexados"
     * Per-project chunk count: "chunks indexados"
-    * Per-project link: "abrir en playground"
+    * Per-project link: "abrir en el explorador" (points at /mcp-ui)
     * Empty state: "Aún no hay proyectos en el manifiesto."
-    * Primary CTA: "Probar el playground MCP"
+    * Primary CTA: "Explorador MCP"
     * Secondary CTA: "Chatear con el agente del portfolio"
     """
 
@@ -352,14 +360,19 @@ class TestIndexPageSpanishTranslation:
         )
         assert "indexed chunks" not in text, "the English 'indexed chunks' label must be removed"
 
-    def test_per_project_open_in_playground_link_is_spanish(self, web_client: object) -> None:
-        """The per-project 'open in playground' link MUST be translated."""
+    def test_per_project_open_in_explorer_link_is_spanish(self, web_client: object) -> None:
+        """The per-project 'open in explorer' link MUST point at /mcp-ui
+        and MUST be in Spanish (Phase 2 dropped the /playground link).
+        """
         text = web_client.get("/").text  # type: ignore[attr-defined]
-        assert "abrir en playground" in text, (
-            "the per-project link must read 'abrir en playground' (Spanish)"
+        assert "abrir en el explorador" in text, (
+            "the per-project link must read 'abrir en el explorador' (Spanish)"
         )
         assert "open in playground" not in text, (
             "the English 'open in playground' link label must be removed"
+        )
+        assert 'href="/playground"' not in text, (
+            "the per-project link must not point at the removed /playground surface"
         )
 
     def test_empty_state_message_is_spanish(self, web_client: object) -> None:
@@ -379,13 +392,21 @@ class TestIndexPageSpanishTranslation:
         )
 
     def test_primary_cta_label_is_spanish(self, web_client: object) -> None:
-        """The primary CTA MUST read 'Probar el playground MCP'."""
+        """The primary CTA MUST read 'Explorador MCP' and MUST point at /mcp-ui.
+
+        Phase 2 dropped the 'Probar el playground MCP' CTA in favor of
+        a direct 'Explorador MCP' link to /mcp-ui — the sole browser
+        tool surface.
+        """
         text = web_client.get("/").text  # type: ignore[attr-defined]
-        assert "Probar el playground MCP" in text, (
-            "the primary CTA must read 'Probar el playground MCP' (Spanish)"
+        assert "Explorador MCP" in text, (
+            "the primary CTA must read 'Explorador MCP' (Spanish)"
         )
-        assert "Try the MCP playground" not in text, (
-            "the English 'Try the MCP playground' CTA must be removed"
+        assert "Probar el playground MCP" not in text, (
+            "the legacy 'Probar el playground MCP' CTA must be removed"
+        )
+        assert 'href="/playground"' not in text, (
+            "the primary CTA must not point at the removed /playground surface"
         )
 
     def test_secondary_cta_label_is_spanish(self, web_client: object) -> None:
@@ -397,80 +418,6 @@ class TestIndexPageSpanishTranslation:
         assert "Chat with the portfolio agent" not in text, (
             "the English 'Chat with the portfolio agent' CTA must be removed"
         )
-
-
-class TestPlaygroundPageSpanishTranslation:
-    """GET /playground page MUST be in Spanish.
-
-    Translated strings check (selected):
-    * Page title: "Probar el servidor MCP"
-    * Tool buttons: "Listar proyectos", "Buscar", "Explicar", "Resumir",
-      "Renderizar diagrama", "Preguntar"
-    * Form labels: "consulta", "id_proyecto"
-    * Streaming badge: "en vivo"
-    """
-
-    def test_page_title_is_spanish(self, web_client: object) -> None:
-        text = web_client.get("/playground").text  # type: ignore[attr-defined]
-        assert "Probar el servidor MCP" in text, (
-            "playground.html title must read 'Probar el servidor MCP' (Spanish)"
-        )
-        assert "Try the MCP server" not in text, (
-            "the English 'Try the MCP server' title must be removed"
-        )
-
-    def test_list_projects_button_label_is_spanish(self, web_client: object) -> None:
-        text = web_client.get("/playground").text  # type: ignore[attr-defined]
-        assert "Listar proyectos" in text, (
-            "playground.html list_projects button must read 'Listar proyectos'"
-        )
-
-    def test_search_button_label_is_spanish(self, web_client: object) -> None:
-        text = web_client.get("/playground").text  # type: ignore[attr-defined]
-        # The Search button is the only standalone "Buscar" string;
-        # the section h2 "search_code" still contains the API name.
-        assert ">Buscar<" in text, "playground.html search_code button must read 'Buscar'"
-
-    def test_explain_button_label_is_spanish(self, web_client: object) -> None:
-        text = web_client.get("/playground").text  # type: ignore[attr-defined]
-        assert ">Explicar<" in text, (
-            "playground.html explain_architecture button must read 'Explicar'"
-        )
-
-    def test_summarize_button_label_is_spanish(self, web_client: object) -> None:
-        text = web_client.get("/playground").text  # type: ignore[attr-defined]
-        assert ">Resumir<" in text, "playground.html summarize_readme button must read 'Resumir'"
-
-    def test_render_diagram_button_label_is_spanish(self, web_client: object) -> None:
-        text = web_client.get("/playground").text  # type: ignore[attr-defined]
-        assert "Renderizar diagrama" in text, (
-            "playground.html get_architecture_diagram button must read 'Renderizar diagrama'"
-        )
-
-    def test_ask_portfolio_button_label_is_spanish(self, web_client: object) -> None:
-        text = web_client.get("/playground").text  # type: ignore[attr-defined]
-        assert "Preguntar" in text, "playground.html ask_portfolio button must read 'Preguntar →'"
-
-    def test_query_field_label_is_spanish(self, web_client: object) -> None:
-        text = web_client.get("/playground").text  # type: ignore[attr-defined]
-        # The <label for="search_code-query"> query </label> tag pattern
-        # — assert the visible label text is "consulta".
-        assert "consulta" in text, "playground.html search_code field label must read 'consulta'"
-
-    def test_project_id_field_label_is_spanish(self, web_client: object) -> None:
-        text = web_client.get("/playground").text  # type: ignore[attr-defined]
-        # The input name attribute is still "project_id" (HTML form key)
-        # but the visible label is translated to "id_proyecto".
-        assert "id_proyecto" in text, (
-            "playground.html project_id field label must read 'id_proyecto'"
-        )
-
-    def test_streaming_badge_is_spanish(self, web_client: object) -> None:
-        """The streaming badge on ask_portfolio MUST read 'en vivo' (Spanish
-        for 'live' — clearer for recruiters than the loanword 'streaming').
-        """
-        text = web_client.get("/playground").text  # type: ignore[attr-defined]
-        assert "en vivo" in text, "the ask_portfolio streaming badge must read 'en vivo' (Spanish)"
 
 
 class TestChatPageSpanishTranslation:

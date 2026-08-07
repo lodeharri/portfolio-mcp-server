@@ -86,7 +86,7 @@
         <p class="chat-noscript">
             Se requiere JavaScript para el chat en vivo. Las otras cinco
             herramientas siguen disponibles en
-            <a href="/playground"><code>/playground</code></a>.
+            <a href="/mcp-ui"><code>/mcp-ui</code></a>.
         </p>
     </noscript>
 </section>
@@ -643,7 +643,7 @@
     if (!jsAvailable) {
         setStatus("unsupported", "Se requiere JavaScript");
         showInlineRetry(
-            "Se requiere JavaScript para el chat en vivo. Prueba /playground para las otras herramientas."
+            "Se requiere JavaScript para el chat en vivo. Prueba /mcp-ui para las otras herramientas."
         );
         if (submitButton) submitButton.disabled = true;
     } else {

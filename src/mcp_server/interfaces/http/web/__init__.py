@@ -1,6 +1,6 @@
-"""Browser-facing HTTP package — the playground surface.
+"""Browser-facing HTTP package — the landing + MCP explorer surface.
 
-Module map for change 003-playground-ui:
+Module map:
 
 * ``deps`` — :func:`get_composition`, the helper the routes use to
   look up :class:`mcp_server.composition.Composition` from
@@ -9,10 +9,11 @@ Module map for change 003-playground-ui:
   bound to ``playground/templates/`` so every page renders through the
   same environment.
 * ``router`` — :func:`build_web_router` returning an :class:`APIRouter`
-  with the static mount, ``GET /``, ``GET /playground``, and the five
-  ``POST /playground/api/{tool_name}`` form endpoints (PR1 surface).
-* ``playground`` — the five form endpoint implementations, kept as a
-  sibling module so the router file stays thin.
+  with the static mount, ``GET /`` (landing), ``GET /mcp-ui``
+  (auto-generated browser MCP explorer), and the chat surface
+  (``GET /chat`` + ``POST /chat/stream``).
+* ``mcp_browser`` — the ``/mcp-ui`` page, generated from the real
+  JSON-RPC ``/mcp`` transport tool registry.
 
 The package imports application ports / use cases / security layers
 ONLY — never ``infrastructure/`` (hexagonal invariant under the

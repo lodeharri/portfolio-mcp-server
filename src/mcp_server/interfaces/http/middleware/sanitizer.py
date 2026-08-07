@@ -14,19 +14,16 @@ Skipped routes
 --------------
 
 The skip set is a closed-world tuple literal at module scope; per
-change 003-playground-ui (``sanitizer-skip-list`` spec, Decision #9)
-the prefixes are:
+the ``sanitizer-skip-list`` spec (Decision #9) the prefixes are:
 
 * ``/healthz`` — known-safe status probe.
 * ``/mcp`` — MCP transport (governed by the tool-layer sanitizer).
+* ``/mcp-ui`` — auto-generated browser MCP explorer (the HTML body
+  must reach the browser verbatim; the tool results inside ``<pre>``
+  blocks are already tool-layer-sanitized).
 * ``/chat`` — chat HTML page (would be double-sanitized and broken).
 * ``/chat/stream`` — SSE endpoint (middleware buffers full bodies
   and would break per-token latency).
-* ``/playground`` — playground HTML page (template body must reach
-  the browser verbatim; HTMX/form references must remain intact).
-* ``/playground/api`` — per-tool form fragments (the use case's own
-  ``sanitize(...)`` is the only Layer 3 pass allowed; double-pass
-  would corrupt already-sanitized payloads).
 * ``/static`` — vendored HTMX and ``style.css`` (regex redaction
   would corrupt the JS bytes).
 
@@ -49,17 +46,16 @@ __all__ = ["OutputSanitizerMiddleware"]
 
 
 # Path prefixes the middleware MUST NOT touch. Closed-world set per
-# change 003-playground-ui (sanitizer-skip-list spec, Decision #9) and
-# the container-image directive to scope redaction to the routes that
-# actually emit user data. Order matters for readability — health first,
-# MCP second, then the playground/chat families, then static assets.
+# the sanitizer-skip-list spec (Decision #9) and the container-image
+# directive to scope redaction to the routes that actually emit user
+# data. Order matters for readability — health first, MCP second,
+# then the chat family, then static assets.
 SKIP_PATH_PREFIXES: tuple[str, ...] = (
     "/healthz",
     "/mcp",
+    "/mcp-ui",
     "/chat",
     "/chat/stream",
-    "/playground",
-    "/playground/api",
     "/static",
 )
 

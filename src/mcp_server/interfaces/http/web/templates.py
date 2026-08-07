@@ -1,10 +1,9 @@
-"""Shared Jinja2Templates environment for the playground.
+"""Shared Jinja2Templates environment for the web UI.
 
 The web router exposes a single :class:`Jinja2Templates` instance bound
 to ``playground/templates/`` (sibling to the repo root). Every page
 extends ``base.html`` so the navigation and asset references stay
-consistent across ``GET /``, ``GET /playground``, and
-``GET /chat``.
+consistent across ``GET /``, ``GET /mcp-ui``, and ``GET /chat``.
 
 The templates directory is resolved through
 :func:`mcp_server.interfaces.http.web.paths.resolve_playground_subdir`

@@ -153,14 +153,14 @@ class TestRouteSkipping:
             "sanitization cost on every health probe"
         )
 
-    def test_skip_list_is_seven_prefix_tuple(self) -> None:
-        """The closed-world skip set MUST equal the 7-tuple:
-        ``/healthz``, ``/mcp``, ``/chat``, ``/chat/stream``,
-        ``/playground``, ``/playground/api``, ``/static``.
+    def test_skip_list_is_six_prefix_tuple(self) -> None:
+        """The closed-world skip set MUST equal the 6-tuple:
+        ``/healthz``, ``/mcp``, ``/mcp-ui``, ``/chat``, ``/chat/stream``,
+        ``/static``. (Phase 2 dropped ``/playground`` + ``/playground/api``
+        because that surface is gone.)
 
-        Per change 003-playground-ui (sanitizer-skip-list spec), adding
-        any new prefix requires a spec change; this is the regression
-        guard.
+        Per the sanitizer-skip-list spec, adding any new prefix requires
+        a spec change; this is the regression guard.
         """
         from mcp_server.interfaces.http.middleware.sanitizer import (
             OutputSanitizerMiddleware,
@@ -169,10 +169,9 @@ class TestRouteSkipping:
         expected = (
             "/healthz",
             "/mcp",
+            "/mcp-ui",
             "/chat",
             "/chat/stream",
-            "/playground",
-            "/playground/api",
             "/static",
         )
         assert tuple(OutputSanitizerMiddleware.SKIP_PATH_PREFIXES) == expected
@@ -191,8 +190,8 @@ class TestRouteSkipping:
 
     def test_should_skip_true_for_each_prefix(self) -> None:
         """The ``_should_skip`` predicate MUST return True for each of
-        the 7 closed-world prefixes, including the two ``/chat`` and two
-        ``/playground`` route families.
+        the 6 closed-world prefixes, including the two ``/chat`` and the
+        ``/mcp`` / ``/mcp-ui`` route families.
         """
         from mcp_server.interfaces.http.middleware.sanitizer import (
             _should_skip,
@@ -201,10 +200,9 @@ class TestRouteSkipping:
         for prefix in (
             "/healthz",
             "/mcp",
+            "/mcp-ui",
             "/chat",
             "/chat/stream",
-            "/playground",
-            "/playground/api",
             "/static",
         ):
             assert _should_skip(prefix, [prefix]), (
@@ -213,8 +211,8 @@ class TestRouteSkipping:
 
     def test_should_skip_true_for_subpaths_of_each_prefix(self) -> None:
         """Subpaths of every skip prefix MUST also be skipped — the
-        middleware matches by ``startswith``, so ``/playground/api/x``
-        counts as skipped under ``/playground/api``.
+        middleware matches by ``startswith``, so ``/chat/stream/x``
+        counts as skipped under ``/chat/stream``.
         """
         from mcp_server.interfaces.http.middleware.sanitizer import (
             SKIP_PATH_PREFIXES,
@@ -224,8 +222,7 @@ class TestRouteSkipping:
         for path in (
             "/chat/anything",
             "/chat/stream/anything",
-            "/playground/anything",
-            "/playground/api/list_projects",
+            "/mcp-ui/anything",
             "/static/htmx.min.js",
             "/static/style.css",
         ):
