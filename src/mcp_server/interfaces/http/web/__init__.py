@@ -19,6 +19,7 @@ ONLY — never ``infrastructure/`` (hexagonal invariant under the
 ``interfaces/`` boundary).
 """
 
+from mcp_server.interfaces.http.web.mcp_browser import build_mcp_browser_router
 from mcp_server.interfaces.http.web.router import build_web_router
 
-__all__ = ["build_web_router"]
+__all__ = ["build_mcp_browser_router", "build_web_router"]

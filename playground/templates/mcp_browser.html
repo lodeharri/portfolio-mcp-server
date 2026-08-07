@@ -1,0 +1,251 @@
+{% extends "base.html" %}
+
+{% block title %}MCP Browser — JSON-RPC Playground{% endblock %}
+
+{% block content %}
+<header class="explorer-hero">
+    <h1>MCP Browser</h1>
+    <p class="hero-lede">
+        Same JSON-RPC transport exposed at
+        <a href="/mcp/" rel="noopener"><code>/mcp/</code></a> — but driven from
+        your browser instead of Claude Desktop. Each form below does the
+        two-step handshake (<code>initialize</code> →
+        <code>tools/call</code>) and renders the raw response inline.
+    </p>
+    <p class="hero-lede" style="margin-top:0.5rem">
+        <strong>Server:</strong>
+        <code>{{ server.name }}@{{ server.version }}</code> ·
+        <strong>Protocol:</strong>
+        <code>{{ server.protocol }}</code> ·
+        <strong>Tools:</strong>
+        <code>{{ server.tools_count }}</code>
+    </p>
+    {% if server.error %}
+    <p class="hero-lede" style="color: var(--solar-red)">
+        Could not enumerate tools: {{ server.error }}
+    </p>
+    {% endif %}
+</header>
+
+<section style="margin-top: 1.5rem">
+    <h2>Quick reference</h2>
+    <p style="margin: 0.5rem 0">
+        This page calls <code>POST /mcp/</code> with
+        <code>Accept: application/json, text/event-stream</code> (the
+        <code>Not Acceptable</code> error you may have seen earlier
+        came from a client that did not send this header). Every
+        browser MCP UI must send it.
+    </p>
+    <pre style="background: var(--solar-base02); color: var(--solar-base3); padding: 0.75rem; border-radius: 4px; overflow-x: auto; font-size: 0.85rem"><code>POST /mcp/
+Content-Type: application/json
+Accept: application/json, text/event-stream
+Mcp-Session-Id: &lt;from initialize response&gt;
+
+{"jsonrpc": "2.0", "method": "tools/call",
+ "params": {"name": "&lt;tool&gt;", "arguments": {...}}, "id": 3}</code></pre>
+</section>
+
+{% for tool in server.tools %}
+<section class="playground-form-card" style="margin-top: 1.25rem" data-tool-name="{{ tool.name }}">
+    <h2>{{ tool.name }}</h2>
+    {% if tool.description %}
+    <p>{{ tool.description }}</p>
+    {% endif %}
+
+    <form data-mcp-form data-tool-name="{{ tool.name }}">
+        {% if tool.fields %}
+            {% for field in tool.fields %}
+            <label for="mcp-{{ tool.name }}-{{ field.name }}">
+                {{ field.label }}
+                {% if field.required %}<span style="color: var(--solar-red)">*</span>{% endif %}
+            </label>
+            {% if field.type == "checkbox" %}
+                <input type="checkbox"
+                       id="mcp-{{ tool.name }}-{{ field.name }}"
+                       name="{{ field.name }}"
+                       {% if field.default %}checked{% endif %}>
+            {% elif field.type == "json" %}
+                <textarea
+                    id="mcp-{{ tool.name }}-{{ field.name }}"
+                    name="{{ field.name }}"
+                    rows="3"
+                    placeholder='{"key": "value"}'
+                    {% if field.required %}required{% endif %}>{{ field.default if field.default else '' }}</textarea>
+            {% else %}
+                <input type="{{ field.type }}"
+                       id="mcp-{{ tool.name }}-{{ field.name }}"
+                       name="{{ field.name }}"
+                       {% if field.default is not none %}value="{{ field.default }}"{% endif %}
+                       {% if field.required %}required{% endif %}
+                       placeholder="{{ field.description }}">
+            {% endif %}
+            {% endfor %}
+        {% else %}
+            <p style="color: var(--solar-base01); font-style: italic">
+                No fields declared. Submitting will call the tool with
+                empty arguments.
+            </p>
+        {% endif %}
+        <button type="submit" style="margin-top: 0.5rem">Call {{ tool.name }}</button>
+    </form>
+
+    <details style="margin-top: 0.5rem">
+        <summary style="cursor: pointer; color: var(--solar-base01)">raw inputSchema</summary>
+        <pre style="background: var(--solar-base02); color: var(--solar-base3); padding: 0.5rem; border-radius: 4px; overflow-x: auto; font-size: 0.8rem; margin: 0.5rem 0 0"><code>{{ tool.input_schema_json }}</code></pre>
+    </details>
+
+    <div class="result" role="status" style="margin-top: 0.5rem">
+        <em style="color: var(--solar-base01)">Submit a form above to call this tool.</em>
+    </div>
+</section>
+{% endfor %}
+
+<script>
+// MCP Browser JS — does the full initialize → tools/call handshake
+// against the real /mcp/ JSON-RPC endpoint, mimicking what Claude
+// Desktop / MCP Inspector do natively.
+(function () {
+    "use strict";
+
+    var MCP_URL = "/mcp/";
+    var sessionId = null;
+
+    function showError(formEl, message) {
+        var div = formEl.parentNode.querySelector(".result");
+        div.innerHTML = '<pre style="color: var(--solar-red); background: var(--solar-base2); padding: 0.5rem; border-radius: 4px; overflow-x: auto; font-size: 0.85rem"><code>'
+            + escapeHtml(message)
+            + "</code></pre>";
+    }
+
+    function showResult(formEl, payload) {
+        var div = formEl.parentNode.querySelector(".result");
+        var isError = payload.isError === true;
+        var bg = isError ? "var(--solar-red)" : "var(--solar-green)";
+        var content = "";
+        if (Array.isArray(payload.content)) {
+            content = payload.content
+                .map(function (c) {
+                    return c && c.text ? c.text : JSON.stringify(c);
+                })
+                .join("\n\n");
+        } else if (payload.structuredContent) {
+            content = JSON.stringify(payload.structuredContent, null, 2);
+        } else {
+            content = JSON.stringify(payload, null, 2);
+        }
+        div.innerHTML = '<p style="margin: 0 0 0.25rem; color:'
+            + bg
+            + '; font-weight: 600">'
+            + (isError ? "ERROR" : "OK")
+            + "</p><pre style='background: var(--solar-base02); color: var(--solar-base3); padding: 0.75rem; border-radius: 4px; overflow-x: auto; font-size: 0.85rem'><code>"
+            + escapeHtml(content)
+            + "</code></pre>";
+    }
+
+    function escapeHtml(s) {
+        return String(s)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+    }
+
+    function rpc(method, params, id) {
+        var body = JSON.stringify({
+            jsonrpc: "2.0",
+            method: method,
+            params: params || {},
+            id: id,
+        });
+        var headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+        };
+        if (sessionId) {
+            headers["Mcp-Session-Id"] = sessionId;
+        }
+        return fetch(MCP_URL, {
+            method: "POST",
+            headers: headers,
+            body: body,
+        }).then(function (r) {
+            // FastMCP returns the session id in the response header.
+            if (!sessionId) {
+                var sid = r.headers.get("mcp-session-id");
+                if (sid) sessionId = sid;
+            }
+            return r.json();
+        });
+    }
+
+    function buildArgs(form) {
+        var fd = new FormData(form);
+        var out = {};
+        fd.forEach(function (value, key) {
+            if (value === "" || value === null) return;
+            // Parse JSON-typed fields.
+            var input = form.querySelector('[name="' + key + '"]');
+            if (input && input.tagName === "TEXTAREA") {
+                try {
+                    out[key] = JSON.parse(value);
+                    return;
+                } catch (e) {
+                    out[key] = value;
+                    return;
+                }
+            }
+            if (input && input.type === "checkbox") {
+                out[key] = input.checked;
+                return;
+            }
+            if (input && input.type === "number") {
+                out[key] = Number(value);
+                return;
+            }
+            out[key] = value;
+        });
+        return out;
+    }
+
+    function bindForms() {
+        document.querySelectorAll("form[data-mcp-form]").forEach(function (form) {
+            form.addEventListener("submit", function (event) {
+                event.preventDefault();
+                var args = buildArgs(form);
+                var name = form.getAttribute("data-tool-name");
+                var resultEl = form.parentNode.querySelector(".result");
+                resultEl.innerHTML = '<em style="color: var(--solar-base01)">Calling ' + name + ' ...</em>';
+                rpc("initialize", {
+                    protocolVersion: "2024-11-05",
+                    capabilities: {},
+                    clientInfo: { name: "browser-ui", version: "1" }
+                }, 1)
+                    .then(function () {
+                        return rpc("tools/call", {
+                            name: name,
+                            arguments: args || {}
+                        }, 2);
+                    })
+                    .then(function (resp) {
+                        if (resp.error) {
+                            showError(form, "code=" + resp.error.code + " msg=" + resp.error.message);
+                        } else {
+                            showResult(form, resp.result);
+                        }
+                    })
+                    .catch(function (err) {
+                        showError(form, String(err));
+                    });
+            });
+        });
+    }
+
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", bindForms);
+    } else {
+        bindForms();
+    }
+})();
+</script>
+{% endblock %}
