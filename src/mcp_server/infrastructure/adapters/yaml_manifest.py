@@ -279,18 +279,35 @@ class YamlManifestAdapter:
         """Return True if any segment of ``resolved`` matches a global
         exclude path token.
 
-        Compares each ``resolved.parts`` entry against ``prefixes`` so
-        ``prefixes: ["node_modules"]`` denies every path that contains
-        a ``node_modules`` segment at any depth — e.g.
-        ``/home/x/proj/backend/node_modules/leak.py`` is denied even
+        Accepts both plain segment names (``node_modules``) and glob
+        patterns (``**/node_modules/**``) by stripping the leading
+        ``**/`` and trailing ``/**`` before comparison. This matches
+        the shipped manifest's pattern style and is the
+        "matches the first segment at any depth" semantic.
+
+        So ``prefixes: ["**/dist/**", "**/coverage/**"]`` denies every
+        path that contains a ``dist`` or ``coverage`` segment at any
+        depth — e.g. ``backend/dist/api/handler.js`` is denied even
         though ``backend`` is an include_subdir.
         """
         if not prefixes:
             return False
-        token_set = {token for token in prefixes if token}
-        if not token_set:
+        normalized: set[str] = set()
+        for token in prefixes:
+            if not token:
+                continue
+            clean = token.strip()
+            # Strip glob markers (**/ prefix, /** suffix) so
+            # ``**/dist/**`` becomes ``dist`` for segment comparison.
+            if clean.startswith("**/"):
+                clean = clean[3:]
+            if clean.endswith("/**"):
+                clean = clean[:-3]
+            if clean:
+                normalized.add(clean)
+        if not normalized:
             return False
-        return any(part in token_set for part in resolved.parts)
+        return any(part in normalized for part in resolved.parts)
 
 
 __all__ = ["YamlManifestAdapter"]
