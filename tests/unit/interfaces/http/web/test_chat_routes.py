@@ -197,6 +197,68 @@ class TestGetChatPage:
         assert "showInlineRetry(serverErrorMessage" in body
 
     @pytest.mark.asyncio
+    async def test_get_chat_clears_input_immediately_on_send(self, chat_router) -> None:
+        """The composer MUST clear on send (optimistic UI) — clearing only
+        inside the ``sawDone`` branch leaves stale text in the input
+        after every error.
+
+        Bug 2 of the work item: input.value="" was only called in the
+        successful terminal branch, so on a typed error or network
+        drop the user had to manually delete the question they just
+        asked.
+
+        Smoke test: assert the HTML contains the input-clearing hook
+        OUTSIDE the ``sawDone`` branch — specifically the JS path that
+        ``renderMessage("user", text, false);`` immediately follows.
+        The exact string ``input.value = ""`` MUST appear at least once
+        BEFORE the ``if (sawDone)`` block in the script body, and MUST
+        NOT appear inside the success branch (single source of truth).
+        """
+        import re
+
+        app = _make_app(chat_router)
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://testserver"
+        ) as client:
+            response = await client.get("/chat")
+        body = response.text
+
+        # Locate the inline script block — the chat page renders the
+        # client in a single <script> tag (no external chat.js).
+        script_match = re.search(r"<script>(.*?)</script>", body, re.DOTALL)
+        assert script_match, "chat page must include an inline <script> block"
+        script = script_match.group(1)
+
+        # The hook is called from sendMessage; the user message render
+        # is the first place the question text shows up in the DOM.
+        render_user_idx = script.index('renderMessage("user", text, false);')
+        saw_done_idx = script.index("if (sawDone)")
+        saw_done_close_idx = script.index("} else {", saw_done_idx)
+        # ``} else {`` opens the error branch — past the success branch.
+
+        # The clear-input hook MUST appear somewhere between the
+        # user-message render and the start of the success branch.
+        # (Optimistic UI: clear as soon as the user hits Send.)
+        clear_idx = script.find('input.value = ""', render_user_idx)
+        assert clear_idx != -1, (
+            "input-clearing hook missing after renderMessage('user', ...) — "
+            "optimistic UI requires immediate clear on send"
+        )
+        assert clear_idx < saw_done_idx, (
+            "input-clearing hook must fire BEFORE the success branch — "
+            "the bug was that it only fired inside sawDone, leaving stale "
+            "text in the input after errors"
+        )
+
+        # And the success branch MUST NOT redundantly clear — single
+        # source of truth. The hook lives only in the optimistic path.
+        saw_done_block = script[saw_done_idx:saw_done_close_idx]
+        assert 'input.value = ""' not in saw_done_block, (
+            "input.value = '' must not appear inside the sawDone branch — "
+            "the optimistic clear already handled it earlier"
+        )
+
+    @pytest.mark.asyncio
     async def test_get_chat_extends_base_template(self, chat_router) -> None:
         """The page MUST extend ``base.html`` so navigation / stylesheets line up."""
         app = _make_app(chat_router)

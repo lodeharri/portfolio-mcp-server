@@ -399,6 +399,14 @@
             { role: "user", content: text },
         ]);
         renderMessage("user", text, false);
+        // Optimistic UI: clear the composer immediately so the user can
+        // start typing the next question while the agent is still
+        // thinking. The closure-captured ``text`` backs the Retry
+        // button on error paths, so this is safe to do even when the
+        // stream drops before the first token arrives.
+        input.value = "";
+        resizeInput();
+        input.focus();
         var assistantAcc = "";
         var assistantNode = renderMessage("assistant", "", true);
         var assistantContent = assistantNode.querySelector(".chat-message__content");
@@ -532,9 +540,6 @@
             appendToHistory("assistant", assistantAcc);
             setStatus("ready", "Ready");
             setStreaming(false);
-            input.value = "";
-            resizeInput();
-            input.focus();
         } else {
             assistantNode.remove();
             setStatus("ready", "Ready");
