@@ -563,6 +563,7 @@ section.playground-chat {
     bottom: 0;
     z-index: 3;
     margin-top: auto;
+    margin-bottom: 2rem;
     padding: 1rem 0 0.25rem;
     background: var(--solar-base2);
     border-top: 1px solid var(--solar-base1);
@@ -668,6 +669,46 @@ section.playground-chat {
     font-weight: 700;
     text-decoration: underline;
     cursor: pointer;
+}
+
+/* --- Clear-history button (secondary outline, sits left of Send) ---
+ *
+ * Visual hierarchy: the primary action (Send) is solid cyan, the
+ * cleanup action (Clear history) is an outline so the recruiter's
+ * eye lands on Send first. Hover fills the outline subtly.
+ */
+.chat-clear {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    min-height: 2.4rem;
+    padding: 0.4rem 0.7rem;
+    background: transparent;
+    border: 1px solid var(--solar-cyan);
+    border-radius: 2px;
+    color: var(--solar-base01);
+    font-family: inherit;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.12s ease-in-out;
+}
+
+.chat-clear:hover:not(:disabled),
+.chat-clear:focus-visible:not(:disabled) {
+    background: var(--solar-base2);
+    color: var(--solar-base03);
+}
+
+.chat-clear:focus-visible {
+    outline: 2px solid var(--solar-cyan);
+    outline-offset: 2px;
+}
+
+.chat-clear:disabled {
+    border-color: var(--solar-base01);
+    color: var(--solar-base1);
+    cursor: not-allowed;
 }
 
 .chat-typing {

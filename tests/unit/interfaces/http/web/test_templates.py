@@ -741,3 +741,184 @@ class TestMcpBrowserPageSpanishTranslation:
             "mcp_browser.html inline client must surface 'Llamando {name}…' "
             "(Spanish for 'Calling {name}…')"
         )
+
+
+# ---------------------------------------------------------------------------
+# Task 3 — chat composer bottom margin (visual breathing room)
+# ---------------------------------------------------------------------------
+
+
+class TestChatComposerBottomMargin:
+    """The chat composer sits at the bottom of the viewport with no
+    breathing room — looks cramped. The CSS MUST give the ``.chat-form``
+    a bottom margin (or the ``.playground-chat`` section a bottom
+    padding) so the composer visually separates from the page edge.
+    """
+
+    def test_css_defines_chat_form_bottom_margin(self) -> None:
+        """``playground/static/style.css`` MUST define a ``.chat-form``
+        rule with a non-zero bottom margin (or bottom padding on the
+        chat section) so the composer has visible breathing room.
+        """
+        css_path = PLAYGROUND_STATIC_DIR / "style.css"
+        css = css_path.read_text(encoding="utf-8")
+        # Pull the .chat-form rule body and check for a bottom margin
+        # declaration. The rule must be non-empty (a class with no
+        # declarations is dead code).
+        form_match = re.search(
+            r"\.chat-form\s*\{([^}]*)\}", css, flags=re.DOTALL
+        )
+        assert form_match, (
+            "style.css must define a .chat-form rule; the chat composer's "
+            "visual layout depends on it"
+        )
+        body = form_match.group(1).strip()
+        assert body, (
+            "style.css's .chat-form rule is empty; the visual fix "
+            "needs a margin-bottom or padding-bottom declaration"
+        )
+        # Accept either margin-bottom or padding-bottom. Both are
+        # valid visual fixes — the spec says "use whatever looks
+        # balanced".
+        assert re.search(r"margin-bottom\s*:", body) or re.search(
+            r"padding-bottom\s*:", body
+        ), (
+            "style.css's .chat-form rule must have a margin-bottom or "
+            "padding-bottom declaration so the composer has breathing room"
+        )
+
+    def test_css_does_not_let_chat_form_sit_flush_against_page_edge(self) -> None:
+        """The chat-form's bottom margin OR the chat section's bottom
+        padding MUST be > 0. Negative or zero values would defeat the
+        purpose of the visual fix.
+        """
+        css_path = PLAYGROUND_STATIC_DIR / "style.css"
+        css = css_path.read_text(encoding="utf-8")
+        form_match = re.search(
+            r"\.chat-form\s*\{([^}]*)\}", css, flags=re.DOTALL
+        )
+        assert form_match, "style.css must define a .chat-form rule"
+        body = form_match.group(1)
+        # Extract any margin-bottom or padding-bottom declaration.
+        margin_m = re.search(r"margin-bottom\s*:\s*([^;]+);", body)
+        padding_m = re.search(r"padding-bottom\s*:\s*([^;]+);", body)
+        assert margin_m or padding_m, (
+            "style.css's .chat-form rule must declare a margin-bottom "
+            "or padding-bottom"
+        )
+        # Convert the value to a number and assert > 0.
+        for m in (margin_m, padding_m):
+            if m is None:
+                continue
+            raw = m.group(1).strip()
+            # Strip trailing CSS units (rem, em, px).
+            numeric = re.match(r"^(-?\d+\.?\d*)", raw)
+            assert numeric, (
+                f"could not parse margin/padding value {raw!r}; "
+                "use a CSS length (rem, em, px)"
+            )
+            assert float(numeric.group(1)) > 0, (
+                f"chat-form margin/padding-bottom must be > 0; got {raw!r}"
+            )
+
+
+# ---------------------------------------------------------------------------
+# Task 4 — clear-history button in chat
+# ---------------------------------------------------------------------------
+
+
+class TestChatClearHistoryButton:
+    """The chat has no way to clear the conversation history from the
+    UI (must use DevTools). Add a small "Limpiar" button next to the
+    Send button with a ``clearHistory()`` JS handler that wipes
+    localStorage and the transcript.
+    """
+
+    @pytest.mark.asyncio
+    async def test_clear_history_button_is_rendered_in_chat_html(
+        self, chat_client_factory
+    ) -> None:
+        """chat.html MUST render a clear-history button with a stable
+        marker id (``chat-clear``) AND a Spanish label ("Limpiar" or
+        "Borrar historial").
+        """
+        async with chat_client_factory() as client:
+            response = await client.get("/chat")
+        body = response.text
+        # The button MUST be inside the <form id="chat-form">. We
+        # accept either an id="chat-clear" attribute or a
+        # class="chat-clear" attribute (the spec offers both; the
+        # minimum contract is "a clear-history button is identifiable").
+        assert (
+            'id="chat-clear"' in body
+        ), "chat.html must render a clear-history button with id=\"chat-clear\""
+        assert (
+            'class="chat-clear"' in body
+        ), "chat.html must render a clear-history button with class=\"chat-clear\""
+        # The button's text MUST be in Spanish ("Limpiar" or "Borrar historial").
+        assert (
+            "Limpiar" in body or "Borrar historial" in body
+        ), "the clear-history button label must be in Spanish ('Limpiar' or 'Borrar historial')"
+
+    @pytest.mark.asyncio
+    async def test_clear_history_js_handler_is_wired(self, chat_client_factory) -> None:
+        """The inline JS MUST define a ``clearHistory()`` function that
+        wipes localStorage and clears the transcript, and the button
+        MUST be wired to it via addEventListener.
+        """
+        async with chat_client_factory() as client:
+            response = await client.get("/chat")
+        body = response.text
+
+        script_match = re.search(r"<script>(.*?)</script>", body, re.DOTALL)
+        assert script_match, "chat page must include an inline <script> block"
+        script = script_match.group(1)
+
+        # The clearHistory function MUST be defined.
+        assert re.search(
+            r"function\s+clearHistory\s*\(", script
+        ), "chat.html must define a clearHistory() function"
+        # The handler MUST wipe localStorage (remove the historyKey entry).
+        assert "removeItem" in script, (
+            "clearHistory() must call localStorage.removeItem to wipe "
+            "the persisted history"
+        )
+        # The handler MUST clear the transcript DOM.
+        assert "transcript" in script, (
+            "clearHistory() must reach the transcript element to clear it"
+        )
+        # The handler MUST be wired to the button via addEventListener.
+        assert (
+            "addEventListener" in script
+        ), "the clear-history button must be wired via addEventListener"
+        # The confirm() call MUST be in Spanish ("Borrar" or "¿").
+        assert (
+            "¿Borrar" in script and "?" in script
+        ), "clearHistory() must prompt the user in Spanish before wiping"
+
+    def test_css_defines_chat_clear_button_rule(self) -> None:
+        """style.css MUST define a ``.chat-clear`` rule for the new
+        button. The button is a secondary outline (transparent bg,
+        cyan border, base01 text) — not a solid cyan like the Send
+        button — so the visual hierarchy is clear.
+        """
+        css_path = PLAYGROUND_STATIC_DIR / "style.css"
+        css = css_path.read_text(encoding="utf-8")
+        rule_match = re.search(
+            r"\.chat-clear\s*\{([^}]*)\}", css, flags=re.DOTALL
+        )
+        assert rule_match, (
+            "style.css must define a .chat-clear rule for the new "
+            "clear-history button"
+        )
+        body = rule_match.group(1).strip()
+        assert body, (
+            "style.css's .chat-clear rule is empty; the visual style "
+            "is part of the contract"
+        )
+        # Palette discipline: the border MUST use the existing
+        # --solar-cyan accent (no new colors per the change rules).
+        assert "var(--solar-cyan)" in body, (
+            ".chat-clear border must use var(--solar-cyan); the locked "
+            "Solarized Phosphor palette forbids new colors"
+        )

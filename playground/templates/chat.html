@@ -53,6 +53,14 @@
                 aria-label="Tu mensaje"
             ></textarea>
             <button
+                id="chat-clear"
+                type="button"
+                class="chat-clear"
+                aria-label="Limpiar el historial de la conversación"
+            >
+                Limpiar
+            </button>
+            <button
                 id="chat-submit"
                 type="submit"
                 class="chat-submit"
@@ -110,6 +118,7 @@
     var form = document.getElementById("chat-form");
     var input = document.getElementById("chat-input");
     var submitButton = document.getElementById("chat-submit");
+    var clearButton = document.getElementById("chat-clear");
     var status = document.getElementById("chat-status");
     var persistenceNotice = document.getElementById("chat-persistence-notice");
 
@@ -387,6 +396,13 @@
         scrollTranscript();
     }
 
+    function clearHistory() {
+        if (!window.confirm("¿Borrar todo el historial de la conversación?")) return;
+        try { window.localStorage.removeItem(historyKey); } catch (_e) {}
+        transcript.textContent = "";
+        if (input) input.focus();
+    }
+
     function withLock(fn) {
         if (!channel || lockHeld) {
             if (lockHeld) {
@@ -643,6 +659,10 @@
         if (!text || submitButton.disabled) return;
         sendMessage(text);
     });
+
+    if (clearButton) {
+        clearButton.addEventListener("click", clearHistory);
+    }
 
     input.addEventListener("input", resizeInput);
     input.addEventListener("keydown", function (event) {
