@@ -175,7 +175,22 @@ Mcp-Session-Id: &lt;from initialize response&gt;
                 var sid = r.headers.get("mcp-session-id");
                 if (sid) sessionId = sid;
             }
-            return r.json();
+            // The server responds with Server-Sent Events (one
+            // ``event: message`` line + a ``data: {...}`` JSON line).
+            // r.json() fails on the SSE wrapper, so parse the body
+            // as text and extract the data: line.
+            return r.text().then(function (body) {
+                var lines = body.split(/\r?\n/);
+                for (var i = 0; i < lines.length; i++) {
+                    var line = lines[i];
+                    if (line.indexOf("data: ") === 0) {
+                        return JSON.parse(line.substring(6));
+                    }
+                }
+                // Fallback: maybe the server returned a bare JSON
+                // object (no SSE wrapper). Try parsing as-is.
+                return JSON.parse(body);
+            });
         });
     }
 

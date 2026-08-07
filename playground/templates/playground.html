@@ -111,10 +111,12 @@
         tools as needed. The agent streams tokens via SSE in the dedicated
         <a href="/chat"><strong>Chat tab</strong></a>.
     </p>
-    <form id="ask-portfolio-form" hx-on::after-request="window.location='/chat?prefill=' + encodeURIComponent(this.querySelector('[name=question]').value)">
+    <form id="ask-portfolio-form"
+          action="javascript:void(0)"
+          onsubmit="window.location='/chat?prefill=' + encodeURIComponent(this.querySelector('[name=question]').value); return false;">
         <label for="ask_portfolio-question">question</label>
         <input type="text"
-               id="ask_portfolio-question"
+               id="ask-portfolio-question"
                name="question"
                required
                placeholder="What backend stack does finance-coach-latam use?">
