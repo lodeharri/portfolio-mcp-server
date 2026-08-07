@@ -533,6 +533,39 @@ section.playground-chat {
     white-space: pre-wrap;
 }
 
+/* --- Trace row + tool pills (assistant-only RAG affordance) --- */
+
+.chat-trace {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+    margin: 0 0 0.5rem;
+    padding: 0;
+}
+
+.chat-tool-pill {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.375rem;
+    padding: 0.1875rem 0.5rem;
+    background-color: var(--solar-base2);
+    border: 1px solid var(--solar-violet);
+    border-radius: 3px;
+    font-family: inherit;
+    font-size: 0.75rem;
+}
+
+.chat-tool-pill__name {
+    color: var(--solar-violet);
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
+.chat-tool-pill__arg {
+    color: var(--solar-base01);
+    font-style: italic;
+}
+
 .chat-form {
     position: sticky;
     bottom: 0;

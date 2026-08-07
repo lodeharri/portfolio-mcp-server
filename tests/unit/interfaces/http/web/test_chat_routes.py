@@ -197,6 +197,78 @@ class TestGetChatPage:
         assert "showInlineRetry(serverErrorMessage" in body
 
     @pytest.mark.asyncio
+    async def test_get_chat_renders_inline_trace_row_and_tool_pill_hook(self, chat_router) -> None:
+        """The chat page MUST embed the JS hook that renders tool calls as
+        inline pills above the assistant message body.
+
+        Recruiter-UX gate: when the agent calls a sibling tool, the
+        browser shows a small pill (``<name> "primary_arg"``) inside
+        a ``.chat-trace`` row that lives above the assistant's prose.
+        This is the affordance that lets a non-technical viewer
+        confirm "yes, this is a real RAG agent that fetched code,
+        not a fixed-text chatbot".
+
+        The chat client is JS-only (the template ships a ``<script>``
+        that builds the DOM at runtime) so we assert the JS markers
+        that drive the rendering: the trace-row element class, the
+        helper function name, the pill classes referenced by the
+        helper, and the JSON-parse + primary-arg extraction in the
+        SSE ``tool_call`` branch.
+        """
+        import re
+
+        app = _make_app(chat_router)
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://testserver"
+        ) as client:
+            response = await client.get("/chat")
+        body = response.text
+
+        script_match = re.search(r"<script>(.*?)</script>", body, re.DOTALL)
+        assert script_match, "chat page must include an inline <script> block"
+        script = script_match.group(1)
+
+        # Trace row created by renderMessage (assistant branch). The class
+        # assignment is the smoking gun — without it no .chat-trace row
+        # would appear in the DOM.
+        assert 'className = "chat-trace"' in script, (
+            "renderMessage must create a .chat-trace row inside the "
+            "assistant message li, before the body"
+        )
+        # Helper that builds the pill markup and appends to the trace row.
+        assert "function addToolPill" in script, (
+            "chat.html must define an addToolPill(traceNode, name, primaryArg) "
+            "helper for the trace-row rendering"
+        )
+        # Pill classes referenced by the helper markup.
+        assert '"chat-tool-pill"' in script or "'chat-tool-pill'" in script
+        assert '"chat-tool-pill__name"' in script or "'chat-tool-pill__name'" in script
+        assert '"chat-tool-pill__arg"' in script or "'chat-tool-pill__arg'" in script
+
+        # The tool_call branch MUST parse the JSON data line, find the
+        # trace row, and call addToolPill — not create a separate message.
+        tool_call_branch_match = re.search(
+            r'eventName === "tool_call"(.*?)(?=eventName === |continue;\s*\})',
+            script,
+            re.DOTALL,
+        )
+        assert tool_call_branch_match, "SSE parser must have a tool_call branch"
+        branch = tool_call_branch_match.group(1)
+        assert "JSON.parse(dataLine)" in branch, (
+            "tool_call branch must parse the JSON dataLine to extract name/args"
+        )
+        assert "addToolPill" in branch, (
+            "tool_call branch must delegate rendering to addToolPill, "
+            "not create a separate transcript li"
+        )
+        # The old "transcript.insertBefore(toolNode, assistantNode)"
+        # approach MUST NOT survive — that's the ugly dead code.
+        assert "chat-message--tool" not in branch, (
+            "tool_call branch must not create a chat-message--tool li; "
+            "the new design renders pills in the assistant's trace row"
+        )
+
+    @pytest.mark.asyncio
     async def test_get_chat_clears_input_immediately_on_send(self, chat_router) -> None:
         """The composer MUST clear on send (optimistic UI) — clearing only
         inside the ``sawDone`` branch leaves stale text in the input
@@ -256,6 +328,50 @@ class TestGetChatPage:
         assert 'input.value = ""' not in saw_done_block, (
             "input.value = '' must not appear inside the sawDone branch — "
             "the optimistic clear already handled it earlier"
+        )
+
+    @pytest.mark.asyncio
+    async def test_style_css_defines_trace_row_and_tool_pill_classes(self, chat_router) -> None:
+        """``playground/static/style.css`` MUST define the new affordance
+        classes the chat client uses to render tool pills:
+        ``chat-trace``, ``chat-tool-pill``, ``chat-tool-pill__name``, and
+        ``chat-tool-pill__arg``.
+
+        Recruiter-UX gate: without these styles the trace row would
+        inherit the default block-flow and the pills would render as
+        plain text inside the assistant bubble — no visual distinction
+        from the prose, no signal of "this is a tool call". The
+        stylesheet defines them so they share the locked Solarized
+        Phosphor palette (violet accent for the tool name).
+        """
+        import re
+        from pathlib import Path
+
+        css_path = Path(__file__).resolve().parents[5] / "playground" / "static" / "style.css"
+        assert css_path.is_file(), f"style.css not found at {css_path}"
+        css = css_path.read_text(encoding="utf-8")
+
+        # Each selector MUST have a non-empty rule body — the test is
+        # about the contract "these classes are styled", not just
+        # mentioned in comments.
+        for selector in (
+            ".chat-trace",
+            ".chat-tool-pill",
+            ".chat-tool-pill__name",
+            ".chat-tool-pill__arg",
+        ):
+            pattern = re.escape(selector) + r"\s*\{[^}]+\}"
+            assert re.search(pattern, css), (
+                f"style.css must define a non-empty rule for {selector}; "
+                f"the pill affordance depends on it being styled"
+            )
+
+        # Palette discipline: the tool name MUST use --solar-violet (the
+        # audit color and the existing "tool" accent — re-using it keeps
+        # the locked palette honest).
+        assert ".chat-tool-pill__name" in css and "var(--solar-violet)" in css, (
+            ".chat-tool-pill__name must be styled with var(--solar-violet); "
+            "the tool name is the visual anchor of the pill"
         )
 
     @pytest.mark.asyncio

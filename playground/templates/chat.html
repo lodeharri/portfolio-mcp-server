@@ -271,10 +271,40 @@
             body.textContent = content || "";
         }
         li.appendChild(meta);
+
+        // Assistant messages get a trace row above the body so tool pills
+        // visually belong to the same agent turn ("the agent used these
+        // tools, then answered"). The trace row is created empty and
+        // populated lazily as ``event: tool_call`` SSE events arrive.
+        // User messages skip it — they never dispatch tools.
+        if (messageRole === "assistant") {
+            var trace = document.createElement("div");
+            trace.className = "chat-trace";
+            trace.setAttribute("aria-label", "Tools the agent used");
+            li.appendChild(trace);
+        }
         li.appendChild(body);
         transcript.appendChild(li);
         scrollTranscript();
         return li;
+    }
+
+    function addToolPill(traceNode, name, primaryArg) {
+        if (!traceNode) return;
+        var pill = document.createElement("span");
+        pill.className = "chat-tool-pill";
+        var nameNode = document.createElement("span");
+        nameNode.className = "chat-tool-pill__name";
+        nameNode.textContent = name;
+        pill.appendChild(nameNode);
+        if (primaryArg) {
+            var argNode = document.createElement("span");
+            argNode.className = "chat-tool-pill__arg";
+            argNode.textContent = "\u201C" + primaryArg + "\u201D";
+            pill.appendChild(argNode);
+        }
+        traceNode.appendChild(pill);
+        scrollTranscript();
     }
 
     function renderHistory() {
@@ -502,28 +532,40 @@
                     }
                     if (sawError) continue;
                     if (eventName === "tool_call") {
-                        var toolNode = document.createElement("li");
-                        toolNode.className = "chat-message chat-message--tool";
-                        toolNode.dataset.role = "tool";
-                        var toolMeta = document.createElement("div");
-                        toolMeta.className = "chat-message__meta";
-                        var toolLabel = document.createElement("span");
-                        toolLabel.className = "chat-message__role";
-                        toolLabel.textContent = "Tool";
-                        var toolTime = messageTime();
-                        var toolTimeNode = document.createElement("time");
-                        toolTimeNode.className = "chat-message__time";
-                        toolTimeNode.dateTime = toolTime.iso;
-                        toolTimeNode.textContent = toolTime.label;
-                        toolMeta.appendChild(toolLabel);
-                        toolMeta.appendChild(toolTimeNode);
-                        var toolContent = document.createElement("p");
-                        toolContent.className = "chat-message__content";
-                        toolContent.textContent = "tool: " + dataLine;
-                        toolNode.appendChild(toolMeta);
-                        toolNode.appendChild(toolContent);
-                        transcript.insertBefore(toolNode, assistantNode);
-                        scrollTranscript();
+                        // The backend forwards tool invocations as
+                        //   event: tool_call
+                        //   data: {"name": "search_code", "args": {...}, "id": "..."}
+                        // Render them as inline pills in the assistant
+                        // message's trace row — NOT as a separate message
+                        // li. Visual story: "agent used these tools, then
+                        // answered". Recruiter-readable RAG affordance.
+                        var traceNode = assistantNode.querySelector(".chat-trace");
+                        var toolName = "";
+                        var primaryArg = "";
+                        try {
+                            var toolPayload = JSON.parse(dataLine);
+                            if (toolPayload && typeof toolPayload.name === "string") {
+                                toolName = toolPayload.name;
+                            }
+                            if (toolPayload && toolPayload.args && typeof toolPayload.args === "object") {
+                                // First string-valued arg wins — for
+                                // portfolio tools that means ``query``,
+                                // ``path``, or ``project_id``.
+                                var argsKeys = Object.keys(toolPayload.args);
+                                for (var k = 0; k < argsKeys.length; k++) {
+                                    var value = toolPayload.args[argsKeys[k]];
+                                    if (typeof value === "string" && value.trim()) {
+                                        primaryArg = value;
+                                        break;
+                                    }
+                                }
+                            }
+                        } catch (_parseErr) {
+                            // Malformed payload — render a minimal pill
+                            // with no args so the user still sees the
+                            // event landed, instead of silently dropping it.
+                        }
+                        addToolPill(traceNode, toolName, primaryArg);
                         continue;
                     }
                     assistantAcc += dataLine;

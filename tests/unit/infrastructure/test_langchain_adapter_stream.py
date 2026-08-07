@@ -526,6 +526,173 @@ class TestLangChainAgentAdapterStream:
         assert [chunk.data for chunk in token_chunks] == ["hello", "partial text"]
         assert chunks[-1] == AgentChunk(kind="done", data="")
 
+    @pytest.mark.asyncio
+    async def test_yields_tool_call_chunk_when_message_has_tool_calls(self, monkeypatch) -> None:
+        """An ``AIMessageChunk`` carrying ``tool_calls`` MUST yield one
+        ``AgentChunk(kind="tool_call", data=<dict>)`` per tool call,
+        carrying ``name``, ``args``, and ``id`` for the frontend trace row.
+
+        LangGraph emits the model's tool-call signal as a separate
+        ``AIMessageChunk`` event whose ``content`` is ``""`` and
+        ``tool_calls`` is a non-empty list. Without this translation
+        the chat surface never sees tool invocations — the
+        ask_portfolio audit pipeline stays silent and the recruiter
+        demo cannot show "the agent actually used RAG".
+        """
+        tool_calls = [
+            {
+                "name": "search_code",
+                "args": {"query": "rate limit"},
+                "id": "toolu_abc",
+                "type": "tool_call",
+            }
+        ]
+        tool_chunk = AIMessageChunk.model_construct(content="", id="ai-1", tool_calls=tool_calls)
+
+        def _factory(llm: Any, tools: list[Any], **kwargs: Any) -> _StubLangGraphAgent:
+            return _StubLangGraphAgent([(tool_chunk, {"langgraph_node": "agent"})])
+
+        monkeypatch.setattr("mcp_server.infrastructure.langchain.create_react_agent", _factory)
+
+        adapter = LangChainAgentAdapter(api_key="dummy", llm=object())
+        chunks: list[AgentChunk] = []
+        async for chunk in adapter.stream(AgentRequest(question="hi"), []):
+            chunks.append(chunk)
+
+        tool_call_chunks = [c for c in chunks if c.kind == "tool_call"]
+        assert len(tool_call_chunks) == 1, (
+            f"expected 1 tool_call chunk; got {len(tool_call_chunks)}; "
+            f"all chunks: {[(c.kind, c.data) for c in chunks]}"
+        )
+        payload = tool_call_chunks[0].data
+        assert isinstance(payload, dict)
+        assert payload["name"] == "search_code"
+        assert payload["args"] == {"query": "rate limit"}
+        assert payload["id"] == "toolu_abc"
+        # No token chunks emitted for a content="" tool-call message.
+        assert [c for c in chunks if c.kind == "token"] == []
+        # Terminal sentinel still arrives.
+        assert chunks[-1].kind == "done"
+
+    @pytest.mark.asyncio
+    async def test_yields_one_tool_call_chunk_per_tool_in_a_multi_tool_chunk(
+        self, monkeypatch
+    ) -> None:
+        """When a single ``AIMessageChunk`` carries N tool calls the adapter
+        MUST yield exactly N ``kind="tool_call"`` chunks — one per tool —
+        in the order LangGraph emits them. Same-model multi-tool handoff
+        (e.g. ``list_projects`` + ``search_code`` in the same step)
+        must surface both pills to the UI.
+        """
+        tool_calls = [
+            {
+                "name": "list_projects",
+                "args": {},
+                "id": "toolu_1",
+                "type": "tool_call",
+            },
+            {
+                "name": "search_code",
+                "args": {"query": "rate limit", "project_id": "finance-coach-latam"},
+                "id": "toolu_2",
+                "type": "tool_call",
+            },
+        ]
+        tool_chunk = AIMessageChunk.model_construct(
+            content="", id="ai-multi", tool_calls=tool_calls
+        )
+
+        def _factory(llm: Any, tools: list[Any], **kwargs: Any) -> _StubLangGraphAgent:
+            return _StubLangGraphAgent([(tool_chunk, {"langgraph_node": "agent"})])
+
+        monkeypatch.setattr("mcp_server.infrastructure.langchain.create_react_agent", _factory)
+
+        adapter = LangChainAgentAdapter(api_key="dummy", llm=object())
+        chunks: list[AgentChunk] = []
+        async for chunk in adapter.stream(AgentRequest(question="hi"), []):
+            chunks.append(chunk)
+
+        tool_call_chunks = [c for c in chunks if c.kind == "tool_call"]
+        assert len(tool_call_chunks) == 2
+        assert [(c.data["name"], c.data["id"]) for c in tool_call_chunks] == [
+            ("list_projects", "toolu_1"),
+            ("search_code", "toolu_2"),
+        ]
+        # Second tool's args dict round-trips intact (the recruiter demo
+        # wants to see "rate limit" + "finance-coach-latam" as the pill args).
+        assert tool_call_chunks[1].data["args"] == {
+            "query": "rate limit",
+            "project_id": "finance-coach-latam",
+        }
+
+    @pytest.mark.asyncio
+    async def test_tool_call_chunks_come_before_token_for_same_message(self, monkeypatch) -> None:
+        """When a chunk carries BOTH ``tool_calls`` and non-empty ``content``
+        (the model narrates "Let me search…" and then dispatches the tool)
+        the adapter MUST yield the tool_call chunks FIRST, then the token.
+
+        Mirrors the model's thinking order: intent to call the tool
+        arrives as a structured signal before the prose token. The UI
+        renders the trace pills above the body so the chronology has
+        to match what the model emitted.
+        """
+        tool_calls = [
+            {
+                "name": "search_code",
+                "args": {"query": "rate limit"},
+                "id": "toolu_z",
+                "type": "tool_call",
+            }
+        ]
+        mixed_chunk = AIMessageChunk.model_construct(
+            content="Let me look that up.", id="ai-mix", tool_calls=tool_calls
+        )
+
+        def _factory(llm: Any, tools: list[Any], **kwargs: Any) -> _StubLangGraphAgent:
+            return _StubLangGraphAgent([(mixed_chunk, {"langgraph_node": "agent"})])
+
+        monkeypatch.setattr("mcp_server.infrastructure.langchain.create_react_agent", _factory)
+
+        adapter = LangChainAgentAdapter(api_key="dummy", llm=object())
+        chunks: list[AgentChunk] = []
+        async for chunk in adapter.stream(AgentRequest(question="hi"), []):
+            chunks.append(chunk)
+
+        kinds = [c.kind for c in chunks]
+        # Exactly one tool_call then one token, then done.
+        assert kinds == ["tool_call", "token", "done"]
+        assert chunks[0].data["name"] == "search_code"
+        assert chunks[1].data == "Let me look that up."
+
+    @pytest.mark.asyncio
+    async def test_does_not_yield_tool_call_chunk_when_tool_calls_is_empty(
+        self, monkeypatch
+    ) -> None:
+        """A plain text-only ``AIMessageChunk`` (no tool calls) MUST yield
+        exactly one ``kind="token"`` chunk and NO ``kind="tool_call"``
+        chunk — preserving the pre-existing single-token path.
+        """
+        plain_chunk = AIMessageChunk.model_construct(content="hello", id="ai-text", tool_calls=[])
+
+        def _factory(llm: Any, tools: list[Any], **kwargs: Any) -> _StubLangGraphAgent:
+            return _StubLangGraphAgent([(plain_chunk, {"langgraph_node": "agent"})])
+
+        monkeypatch.setattr("mcp_server.infrastructure.langchain.create_react_agent", _factory)
+
+        adapter = LangChainAgentAdapter(api_key="dummy", llm=object())
+        chunks: list[AgentChunk] = []
+        async for chunk in adapter.stream(AgentRequest(question="hi"), []):
+            chunks.append(chunk)
+
+        token_chunks = [c for c in chunks if c.kind == "token"]
+        tool_call_chunks = [c for c in chunks if c.kind == "tool_call"]
+        assert [c.data for c in token_chunks] == ["hello"]
+        assert tool_call_chunks == [], (
+            f"text-only chunk must not produce tool_call chunks; got "
+            f"{[c.data for c in tool_call_chunks]}"
+        )
+        assert chunks[-1].kind == "done"
+
 
 # ---------------------------------------------------------------------------
 # Mock adapter — same AgentChunk shape, zero network

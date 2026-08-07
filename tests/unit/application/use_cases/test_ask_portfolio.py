@@ -1,12 +1,18 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest
 
-from mcp_server.application.ports.agent import AgentRequest, AgentResponse
+from mcp_server.application.ports.agent import (
+    AgentChunk,
+    AgentRequest,
+    AgentResponse,
+)
 from mcp_server.application.use_cases.ask_portfolio import (
     DEFAULT_MAX_TOOL_CALLS,
+    AskPortfolioChunk,
     AskPortfolioRequest,
     AskPortfolioUseCase,
 )
@@ -153,3 +159,124 @@ async def test_async_execution_and_conversation_id() -> None:
     )
 
     assert result.conversation_id == "conv-123"
+
+
+# ---------------------------------------------------------------------------
+# Streaming path (PR2b /chat/stream wire): astream must surface tool calls.
+# ---------------------------------------------------------------------------
+
+
+class FakeStreamingAgent:
+    """A fake AgentPort that yields a deterministic sequence of ``AgentChunk``s.
+
+    Mirrors what ``LangChainAgentAdapter.stream`` will produce once the
+    new ``tool_call`` surfacing lands: a tool_call chunk, then a
+    token, then ``done``. The use case MUST yield one
+    ``AskPortfolioChunk(kind="tool_call")`` and audit-warn for the
+    tool name; the SSE encoder turns that into a typed event the
+    browser renders as a trace pill.
+    """
+
+    def __init__(self, chunks: list[AgentChunk]) -> None:
+        self.chunks = chunks
+        self.run_calls: list[AgentRequest] = []
+        self.stream_calls: list[AgentRequest] = []
+
+    async def run(self, request: AgentRequest, tools: list[Any]) -> AgentResponse:
+        self.run_calls.append(request)
+        return AgentResponse(answer="unused")
+
+    async def stream(self, request: AgentRequest, tools: list[Any]) -> AsyncIterator[AgentChunk]:
+        self.stream_calls.append(request)
+        for chunk in self.chunks:
+            yield chunk
+
+
+def make_streaming_use_case(
+    agent: FakeStreamingAgent,
+) -> tuple[AskPortfolioUseCase, FakeAudit, FakeRateLimiter]:
+    audit = FakeAudit()
+    limiter = FakeRateLimiter()
+    use_case = AskPortfolioUseCase(
+        agent=agent,
+        tools=["tool"],
+        sanitizer=OutputSanitizer(audit=audit),
+        audit=audit,
+        rate_limiter=limiter,
+    )
+    return use_case, audit, limiter
+
+
+@pytest.mark.asyncio
+async def test_astream_yields_tool_call_chunk_and_audits_tool_call() -> None:
+    """``astream`` MUST yield one ``AskPortfolioChunk(kind='tool_call',
+    tool_call=...)`` per agent tool_call chunk AND emit
+    ``audit.warn('agent.tool_call', tool=<name>, source='ask_portfolio')``.
+
+    The audit parity with ``aexecute`` (asserted in
+    ``test_audits_tool_calls``) is non-negotiable: every tool call
+    the agent makes — buffered or streaming — must show up in the
+    security audit trail. The streaming chunk shape is the bridge
+    the SSE encoder needs to forward a typed ``event: tool_call``
+    line to the browser pill renderer.
+    """
+    agent = FakeStreamingAgent(
+        chunks=[
+            AgentChunk(
+                kind="tool_call",
+                data={"name": "search_code", "args": {"query": "rate limit"}, "id": "toolu_abc"},
+            ),
+            AgentChunk(kind="token", data="Found it."),
+            AgentChunk(kind="done", data=""),
+        ]
+    )
+    use_case, audit, _ = make_streaming_use_case(agent)
+
+    yielded: list[AskPortfolioChunk] = []
+    async for chunk in use_case.astream(
+        AskPortfolioRequest(question="How does rate limiting work?")
+    ):
+        yielded.append(chunk)
+
+    tool_call_chunks = [c for c in yielded if c.kind == "tool_call"]
+    assert len(tool_call_chunks) == 1
+    assert tool_call_chunks[0].tool_call == {
+        "name": "search_code",
+        "args": {"query": "rate limit"},
+        "id": "toolu_abc",
+    }
+    # Audit parity with ``aexecute`` — the security trail records every tool call.
+    assert ("agent.tool_call", {"tool": "search_code", "source": "ask_portfolio"}) in audit.events
+    # The terminal done chunk MUST carry the tool name in tools_called.
+    done_chunks = [c for c in yielded if c.kind == "done"]
+    assert len(done_chunks) == 1
+    assert done_chunks[0].result is not None
+    assert done_chunks[0].result.tools_called == ["search_code"]
+
+
+@pytest.mark.asyncio
+async def test_astream_sanitizes_tokens_but_preserves_tool_call_intact() -> None:
+    """Token chunks MUST be sanitized via ``OutputSanitizer``; tool_call
+    chunks MUST pass through verbatim (the sanitizer is for prose —
+    redaction rules don't apply to a structured tool dispatch).
+    """
+    agent = FakeStreamingAgent(
+        chunks=[
+            AgentChunk(kind="tool_call", data={"name": "list_projects", "args": {}, "id": "t1"}),
+            AgentChunk(kind="token", data="Key: AKIAIOSFODNN7EXAMPLE"),
+            AgentChunk(kind="done", data=""),
+        ]
+    )
+    use_case, _, _ = make_streaming_use_case(agent)
+
+    yielded: list[AskPortfolioChunk] = []
+    async for chunk in use_case.astream(AskPortfolioRequest(question="List projects")):
+        yielded.append(chunk)
+
+    tokens = [c for c in yielded if c.kind == "token"]
+    expected_redacted = "Key: " + "[REDACTED]"
+    assert tokens[0].answer_token == expected_redacted
+    # Tool-call payload MUST round-trip — the renderer needs the
+    # original dict to extract name + args for the pill.
+    tool_calls = [c for c in yielded if c.kind == "tool_call"]
+    assert tool_calls[0].tool_call == {"name": "list_projects", "args": {}, "id": "t1"}

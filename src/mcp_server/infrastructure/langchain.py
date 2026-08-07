@@ -49,6 +49,45 @@ DEFAULT_AGENT_SYSTEM_PROMPT = (
 )
 
 
+def _extract_tool_call_payload(raw_tool_call: Any) -> dict[str, Any] | None:
+    """Normalize a single ``AIMessageChunk.tool_calls`` entry to the wire shape.
+
+    LangChain emits each tool call as either a dict
+    (``{"name": ..., "args": ..., "id": ...}``) or a ``ToolCall``-like
+    object exposing the same attributes via attribute access. The
+    adapter returns a clean ``{"name", "args", "id"}`` dict so the
+    use case layer (and the SSE encoder, and the browser pill
+    renderer) can rely on a single shape without sniffing for
+    ``isinstance(raw, dict)``.
+
+    Returns ``None`` for entries that lack a usable name — the caller
+    must skip those, not invent one.
+    """
+    name: Any
+    args: Any
+    call_id: Any
+    if isinstance(raw_tool_call, dict):
+        name = raw_tool_call.get("name")
+        args = raw_tool_call.get("args", {})
+        call_id = raw_tool_call.get("id")
+    else:
+        name = getattr(raw_tool_call, "name", None)
+        args = getattr(raw_tool_call, "args", {})
+        call_id = getattr(raw_tool_call, "id", None)
+    if not isinstance(name, str) or not name:
+        return None
+    if not isinstance(args, dict):
+        # LangGraph passes ``args`` as a parsed dict on tool_calls;
+        # any non-dict value here would be a model/protocol surprise
+        # that the UI can't render anyway. Coerce safely.
+        try:
+            args = dict(args) if args is not None else {}
+        except (TypeError, ValueError):
+            args = {}
+    call_id_str = str(call_id) if call_id is not None else ""
+    return {"name": name, "args": args, "id": call_id_str}
+
+
 class LangChainChunkingAdapter:
     """Split source text with language-aware LangChain splitters."""
 
@@ -180,11 +219,18 @@ class LangChainAgentAdapter:
         ADR-003) and yields one token chunk per ``AIMessageChunk``
         event. Non-AI messages (HumanMessage, ToolMessage) are
         silently filtered so the chat shows only the assistant's
-        prose.         Chunks with empty content shapes (``None``, empty strings, and empty
-        containers) are skipped to prevent representation artifacts from
+        prose. Chunks with empty content shapes (``None``, empty strings, and
+        empty containers) are skipped to prevent representation artifacts from
         leaking into the SSE stream. Multimodal text blocks are normalized to
         their text values; blocks without text are ignored.
 
+        Tool-call surfacing: when an ``AIMessageChunk`` carries a non-empty
+        ``tool_calls`` list, the adapter yields one
+        ``AgentChunk(kind="tool_call", data={"name", "args", "id"})`` per
+        tool BEFORE any token yielded for the same chunk. This mirrors
+        the model's intent order — the structured tool dispatch precedes
+        the prose — and lets the UI render trace pills above the body so
+        recruiters can see the agent actually used RAG tools.
 
         A terminal ``AgentChunk(kind="done", data="")`` is yielded
         after the agent finishes, mirroring the mock adapter so
@@ -201,6 +247,20 @@ class LangChainAgentAdapter:
         ):
             if not isinstance(message, AIMessageChunk):
                 continue
+
+            # Tool-call surfacing: emit one ``tool_call`` chunk per entry in
+            # ``message.tool_calls`` BEFORE we attempt to tokenize the chunk's
+            # content. The order matters — the UI renders the trace pills
+            # above the assistant body, so the structured signal has to
+            # arrive first to match the model's intent ("I want to call X,
+            # then say something about it").
+            raw_tool_calls = getattr(message, "tool_calls", None) or []
+            for raw_tool_call in raw_tool_calls:
+                tool_payload = _extract_tool_call_payload(raw_tool_call)
+                if tool_payload is None:
+                    continue
+                yield AgentChunk(kind="tool_call", data=tool_payload)
+
             content = message.content
             if content is None:
                 continue
