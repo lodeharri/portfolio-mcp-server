@@ -126,11 +126,17 @@ Mcp-Session-Id: &lt;from initialize response&gt;
 
     function truncateSnippet(text, maxLen) {
         if (text === null || text === undefined || text === "") return "";
-        var lines = String(text).split(/\r?\n/);
-        var visible = lines.slice(0, 2).join("\n");
-        var truncated = visible.length > maxLen || lines.length > 2;
-        if (visible.length > maxLen) visible = visible.substring(0, maxLen);
-        return visible + (truncated ? "…" : "");
+        var str = String(text);
+        if (str.length <= maxLen) return str;
+        // Truncate to ``maxLen`` characters; prefer to break on a newline if
+        // one exists in the last third of the cut window — code/text
+        // snippets read better when not chopped mid-word or mid-line.
+        var truncated = str.substring(0, maxLen);
+        var lastNewline = truncated.lastIndexOf("\n");
+        if (lastNewline > maxLen * 2 / 3) {
+            truncated = truncated.substring(0, lastNewline);
+        }
+        return truncated + "…";
     }
 
     function formatScore(score) {

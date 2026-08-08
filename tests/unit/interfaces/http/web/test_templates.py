@@ -1051,6 +1051,28 @@ class TestMcpBrowserResultRenderers:
             "(FastMCP wraps list returns as {structuredContent: {result: [...]}})"
         )
 
+    def test_truncateSnippet_preserves_content_above_max_len(self, web_client: object) -> None:
+        """Snippet truncation must show up to ``maxLen`` characters, NOT only
+        the first 2 lines. The previous implementation sliced lines[0:2]
+        and discarded the rest when the content had 3+ lines — producing
+        a useless ``"```\\n…"\` for code snippets starting with fenced blocks.
+        """
+        text = web_client.get("/mcp-ui").text  # type: ignore[attr-defined]
+        # Find the truncateSnippet definition and confirm it uses maxLen
+        # (substring(0, maxLen)) rather than lines.slice(0, 2).
+        assert "truncateSnippet" in text, (
+            "/mcp-ui must expose the truncateSnippet helper"
+        )
+        assert "lines.slice(0, 2)" not in text, (
+            "truncateSnippet must NOT cap at the first 2 lines — code "
+            "snippets starting with markdown fenced blocks lost all "
+            "content when sliced to lines[0:2]"
+        )
+        assert "substring(0, maxLen)" in text, (
+            "truncateSnippet must truncate at ``maxLen`` characters so "
+            "recruiters see the actual chunk content (200-char window)"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Task 5 — friendly error banner in showError (vs raw <pre><code>)
