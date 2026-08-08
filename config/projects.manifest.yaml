@@ -5,8 +5,11 @@
 # to index anything outside the declared projects.
 #
 # Sibling projects live under /home/harri/development/projects/portfolio/
-# but this server is intentionally scoped to the two portfolio pieces that
-# are recruiter-facing. Adjust only via a new SDD change.
+# but this server is intentionally scoped to the recruiter-facing portfolio
+# pieces — both the shipped projects (finance-coach-latam,
+# landing-page-portfolio) AND the server codebase itself
+# (portfolio-mcp-server), so recruiters can ask about HOW the demo works.
+# Adjust only via a new SDD change.
 
 schema_version: 1
 
@@ -122,3 +125,28 @@ projects:
     adr_path: docs/adr
     readme_path: README.md
     diagram_path: docs/architecture.svg
+
+
+  - id: portfolio-mcp-server
+    path: /home/harri/development/projects/portfolio/mcp-server-playground
+    display_name: "Portfolio MCP Server"
+    description: >
+      This MCP server itself — chat streaming, RAG search, browser playground,
+      and the 5 sibling tools. Exposes Harrison Rodriguez's portfolio via the
+      Model Context Protocol.
+    include_subdirs:
+      - src
+    exclude_subdirs:
+      - openspec
+      - .atl
+      - .engram
+      - .ruff_cache
+    # NOTE: global ``exclude_paths`` already covers tests, build artifacts,
+    # data/ (recursive), __pycache__, .venv, .git, and vendored libs
+    # (``**/*.min.js`` for htmx). ``playground/templates/*.html`` and
+    # ``playground/static/*.css`` are filtered out by the global
+    # ``include_extensions`` whitelist (which is ``.py .ts .tsx .js .jsx
+    # .md .astro`` — no .html, no .css).
+    adr_path: README.md
+    readme_path: README.md
+    # diagram_path intentionally omitted — no architecture SVG ships with this project

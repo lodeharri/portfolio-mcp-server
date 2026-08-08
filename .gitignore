@@ -62,7 +62,7 @@ playwright/.cache/
 .ruff_cache/
 
 # Project-specific: pre-computed vector index
-data/index.sqlite
+# data/index.sqlite is committed — pre-baked DB for Fly.io deploy (Option A)
 data/index.sqlite-*
 data/chunks/
 

@@ -25,7 +25,8 @@ concurrency:
 jobs:
   # Local Docker build gate. Runs cheaply BEFORE the expensive Fly deploy.
   # Three guards:
-  #   1. Image size < 150 MB (was the PR4 success criterion from spec)
+  #   1. Image size < 500 MB (raised from 150 MB on 2026-08-05 after the
+  #      pre-baked vector index pushed the image to ~466 MB)
   #   2. Runtime UID is 10001 (non-root, ADR-001)
   #   3. GEMINI_API_KEY is NOT present in the final image env (no leak)
   # BuildKit --mount=type=secret guarantees the key never enters a layer,
@@ -58,7 +59,7 @@ jobs:
             --secret id=gemini,env=GEMINI_API_KEY \
             .
 
-      - name: Assert image size < 150 MB
+      - name: Assert image size < 500 MB
         run: |
           SIZE_BYTES=$(docker image ls mcp-server:test --format '{{.Size}}' | head -1)
           # Format is "<number><unit>" e.g. "142.3MB". Convert to MB.
@@ -73,8 +74,8 @@ jobs:
               printf "%.1f", num
             }')
           echo "Image size: ${SIZE_BYTES} (${SIZE_MB} MB)"
-          awk -v s="$SIZE_MB" 'BEGIN { exit (s < 150) ? 0 : 1 }' \
-            || (echo "FAIL: image is ${SIZE_MB} MB, must be < 150 MB" && exit 1)
+          awk -v s="$SIZE_MB" 'BEGIN { exit (s < 500) ? 0 : 1 }' \
+            || (echo "FAIL: image is ${SIZE_MB} MB, must be < 500 MB" && exit 1)
 
       - name: Assert runtime UID is 10001 (non-root)
         run: |

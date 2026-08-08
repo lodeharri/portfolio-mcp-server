@@ -979,3 +979,61 @@ class TestChatClearHistoryButton:
             ".chat-clear border must use var(--solar-cyan); the locked "
             "Solarized Phosphor palette forbids new colors"
         )
+
+
+class TestMcpBrowserResultRenderers:
+    """The /mcp-ui page must ship semantic result renderers for recruiters."""
+
+    def test_renderer_dispatcher_and_functions_are_rendered(self, web_client: object) -> None:
+        """The inline client must expose one dispatcher, five tool renderers,
+        and a readable fallback renderer.
+        """
+        text = web_client.get("/mcp-ui").text  # type: ignore[attr-defined]
+        for marker in (
+            "RENDERERS",
+            "renderProjectCards",
+            "renderSearchResultCards",
+            "renderSummary",
+            "renderArchitectureDiagram",
+            "renderDefault",
+        ):
+            assert marker in text, f"/mcp-ui must render the {marker} renderer marker"
+
+    def test_renderer_css_classes_are_rendered(self, web_client: object) -> None:
+        """The inline renderer source must contain the semantic result classes."""
+        text = web_client.get("/mcp-ui").text  # type: ignore[attr-defined]
+        for marker in (
+            "mcp-result-cards",
+            "mcp-result-card",
+            "mcp-result-snippet",
+            "mcp-result-badge",
+            "mcp-result-summary",
+            "mcp-result-sources",
+            "mcp-result-diagram",
+            "mcp-empty-state",
+        ):
+            assert marker in text, f"/mcp-ui must render the {marker} class marker"
+
+    def test_renderSummary_handles_singular_source_field(self, web_client: object) -> None:
+        """summarize_readme returns ``source`` (singular) not ``sources`` (plural);
+        renderSummary must normalize so the sources row never silently disappears.
+        """
+        text = web_client.get("/mcp-ui").text  # type: ignore[attr-defined]
+        assert "summary.source" in text, (
+            "/mcp-ui renderer must read the singular ``source`` field "
+            "produced by summarize_readme (in addition to plural ``sources``)"
+        )
+
+    def test_renderArchitectureDiagram_reads_data_field(self, web_client: object) -> None:
+        """get_architecture_diagram returns base64 SVG in ``data``; the renderer
+        must read that field, not a phantom ``display_svg``.
+        """
+        text = web_client.get("/mcp-ui").text  # type: ignore[attr-defined]
+        assert "diagram.data" in text, (
+            "/mcp-ui renderer must read the ``data`` field from "
+            "GetArchitectureDiagramResult (base64-encoded SVG)"
+        )
+        assert "display_svg" not in text, (
+            "/mcp-ui renderer must NOT reference the phantom ``display_svg`` "
+            "field — only ``data`` exists in the dataclass"
+        )

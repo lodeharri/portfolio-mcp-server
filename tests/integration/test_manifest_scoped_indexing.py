@@ -41,9 +41,23 @@ class TestManifestScopedIndexingIntegration:
         adapter.load()
         return adapter
 
-    def test_real_manifest_has_two_projects(self, manifest_adapter: YamlManifestAdapter) -> None:
+    def test_real_manifest_has_three_projects(self, manifest_adapter: YamlManifestAdapter) -> None:
         manifest = manifest_adapter.load()
-        # The shipped manifest declares finance-coach-latam + landing-page-portfolio.
+        # The shipped manifest declares finance-coach-latam +
+        # landing-page-portfolio + portfolio-mcp-server (this server itself).
+        assert len(manifest.projects) == 3
+
+    def test_real_manifest_includes_portfolio_mcp_server(
+        self, manifest_adapter: YamlManifestAdapter
+    ) -> None:
+        manifest = manifest_adapter.load()
+        ids = {p.id for p in manifest.projects}
+        assert "portfolio-mcp-server" in ids
+
+    def test_real_manifest_includes_finance_coach_latam(
+        self, manifest_adapter: YamlManifestAdapter
+    ) -> None:
+        manifest = manifest_adapter.load()
         ids = {p.id for p in manifest.projects}
         assert "finance-coach-latam" in ids
         assert "landing-page-portfolio" in ids

@@ -117,29 +117,168 @@ Mcp-Session-Id: &lt;from initialize response&gt;
             + "</code></pre>";
     }
 
-    function showResult(formEl, payload) {
-        var div = formEl.parentNode.querySelector(".result");
-        var isError = payload.isError === true;
-        var bg = isError ? "var(--solar-red)" : "var(--solar-green)";
-        var content = "";
-        if (Array.isArray(payload.content)) {
-            content = payload.content
-                .map(function (c) {
-                    return c && c.text ? c.text : JSON.stringify(c);
-                })
-                .join("\n\n");
-        } else if (payload.structuredContent) {
-            content = JSON.stringify(payload.structuredContent, null, 2);
-        } else {
-            content = JSON.stringify(payload, null, 2);
+    function truncateSnippet(text, maxLen) {
+        if (text === null || text === undefined || text === "") return "";
+        var lines = String(text).split(/\r?\n/);
+        var visible = lines.slice(0, 2).join("\n");
+        var truncated = visible.length > maxLen || lines.length > 2;
+        if (visible.length > maxLen) visible = visible.substring(0, maxLen);
+        return visible + (truncated ? "…" : "");
+    }
+
+    function formatScore(score) {
+        if (score === null || score === undefined || score === "") return "";
+        var numeric = Number(score);
+        return Number.isFinite(numeric) ? numeric.toFixed(2) : String(score);
+    }
+
+    function basename(path) {
+        if (path === null || path === undefined) return "";
+        var parts = String(path).split("/");
+        return parts[parts.length - 1] || String(path);
+    }
+
+    function resultContainer(formEl) {
+        return formEl.parentNode.querySelector(".result");
+    }
+
+    function renderProjectCards(formEl, payload) {
+        var projects = Array.isArray(payload.structuredContent)
+            ? payload.structuredContent
+            : [];
+        if (projects.length === 0) {
+            return '<p class="mcp-empty-state">No hay proyectos en el manifiesto.</p>';
         }
-        div.innerHTML = '<p style="margin: 0 0 0.25rem; color:'
-            + bg
+        return '<div class="mcp-result-cards mcp-result-cards--projects">'
+            + projects.map(function (project) {
+                var title = project.display_name || project.id || "Proyecto";
+                return '<article class="mcp-result-card">'
+                    + '<h3>' + escapeHtml(title) + '</h3>'
+                    + '<p>' + escapeHtml(project.description || "") + '</p>'
+                    + '<span class="mcp-result-badge">'
+                    + escapeHtml(String(project.index_chunk_count || 0)) + ' chunks</span>'
+                    + '</article>';
+            }).join("")
+            + "</div>";
+    }
+
+    function renderSearchResultCards(formEl, payload) {
+        var results = Array.isArray(payload.structuredContent)
+            ? payload.structuredContent
+            : [];
+        if (results.length === 0) {
+            return '<p class="mcp-empty-state">Sin resultados para esta búsqueda.</p>';
+        }
+        return '<div class="mcp-result-cards">'
+            + results.map(function (result) {
+                var range = result.line_start !== undefined && result.line_end !== undefined
+                    ? result.line_start + "–" + result.line_end
+                    : "";
+                var score = formatScore(result.score);
+                return '<article class="mcp-result-card">'
+                    + '<p class="mcp-result-card__path">' + escapeHtml(basename(result.file_path)) + '</p>'
+                    + (range ? '<p class="mcp-result-card__meta">Líneas ' + escapeHtml(range) + '</p>' : "")
+                    + '<p class="mcp-result-snippet"><code>'
+                    + escapeHtml(truncateSnippet(result.content, 200))
+                    + '</code></p>'
+                    + '<span class="mcp-result-badge">' + escapeHtml(result.project_id || "") + '</span>'
+                    + (score ? '<span class="mcp-result-badge mcp-result-badge--score">Puntuación ' + escapeHtml(score) + '</span>' : "")
+                    + '</article>';
+            }).join("")
+            + "</div>";
+    }
+
+    function renderSummary(formEl, payload) {
+        var summary = payload.structuredContent || {};
+        var title = summary.display_name || summary.project_id || "Proyecto";
+        // explain_architecture returns ``sources: list[str]``; summarize_readme
+        // returns ``source: str`` (singular). Normalize to a single list so
+        // both tools render the sources row correctly.
+        var sources = Array.isArray(summary.sources)
+            ? summary.sources
+            : (typeof summary.source === "string" && summary.source
+                ? [summary.source]
+                : []);
+        var emptyState = (!summary.summary && sources.length === 0);
+        var body = emptyState
+            ? '<p class="mcp-empty-state">Sin contenido disponible para esta herramienta.</p>'
+            : '<p class="mcp-result-summary">' + escapeHtml(summary.summary || "") + '</p>'
+              + (sources.length
+                  ? '<ul class="mcp-result-sources">'
+                      + sources.map(function (source) {
+                          return '<li>' + escapeHtml(source) + '</li>';
+                      }).join("")
+                      + '</ul>'
+                  : '');
+        return '<article class="mcp-result-card">'
+            + '<h3>' + escapeHtml(title) + '</h3>'
+            + body
+            + '</article>';
+    }
+
+    function renderArchitectureDiagram(formEl, payload) {
+        var diagram = payload.structuredContent || {};
+        var projectId = diagram.project_id || "Proyecto";
+        // get_architecture_diagram returns base64-encoded SVG in ``data``
+        // (per GetArchitectureDiagramResult). No alternative field name.
+        var svg = diagram.data || "";
+        if (!svg) {
+            return '<div class="mcp-result-diagram">'
+                + '<p class="mcp-empty-state">No hay diagrama disponible para '
+                + escapeHtml(projectId) + '.</p></div>';
+        }
+        return '<div class="mcp-result-diagram">'
+            + '<img src="data:image/svg+xml;base64,' + escapeHtml(svg)
+            + '" alt="Diagrama de arquitectura para ' + escapeHtml(projectId) + '" />'
+            + '<p class="mcp-result-caption">' + escapeHtml(projectId) + '</p>'
+            + '</div>';
+    }
+
+    function renderDefault(formEl, payload) {
+        if (payload.structuredContent !== undefined && payload.structuredContent !== null) {
+            var value = payload.structuredContent;
+            var keys = Object.keys(value);
+            return '<dl class="mcp-result-cards">'
+                + keys.map(function (key) {
+                    var item = value[key];
+                    var display = typeof item === "object" && item !== null
+                        ? JSON.stringify(item, null, 2)
+                        : String(item);
+                    return '<div class="mcp-result-card">'
+                        + '<dt>' + escapeHtml(key) + '</dt>'
+                        + '<dd>' + escapeHtml(display) + '</dd>'
+                        + '</div>';
+                }).join("")
+                + "</dl>";
+        }
+        if (Array.isArray(payload.content)) {
+            var paragraphs = payload.content.map(function (content) {
+                return '<p>' + escapeHtml(content && content.text ? content.text : JSON.stringify(content)) + '</p>';
+            }).join("");
+            if (paragraphs) return paragraphs;
+        }
+        return '<pre><code>' + escapeHtml(JSON.stringify(payload, null, 2)) + '</code></pre>';
+    }
+
+    var RENDERERS = {
+        list_projects: renderProjectCards,
+        search_code: renderSearchResultCards,
+        explain_architecture: renderSummary,
+        summarize_readme: renderSummary,
+        get_architecture_diagram: renderArchitectureDiagram,
+    };
+
+    function renderResult(toolName, formEl, payload) {
+        var div = resultContainer(formEl);
+        var isError = payload.isError === true;
+        var statusColor = isError ? "var(--solar-red)" : "var(--solar-green)";
+        var status = '<p style="margin: 0 0 0.25rem; color:'
+            + statusColor
             + '; font-weight: 600">'
             + (isError ? "ERROR" : "OK")
-            + "</p><pre style='background: var(--solar-base02); color: var(--solar-base3); padding: 0.75rem; border-radius: 4px; overflow-x: auto; font-size: 0.85rem'><code>"
-            + escapeHtml(content)
-            + "</code></pre>";
+            + "</p>";
+        var renderer = RENDERERS[toolName] || renderDefault;
+        div.innerHTML = status + renderer(formEl, payload);
     }
 
     function escapeHtml(s) {
@@ -246,7 +385,7 @@ Mcp-Session-Id: &lt;from initialize response&gt;
                         if (resp.error) {
                             showError(form, "code=" + resp.error.code + " msg=" + resp.error.message);
                         } else {
-                            showResult(form, resp.result);
+                            renderResult(name, form, resp.result);
                         }
                     })
                     .catch(function (err) {
