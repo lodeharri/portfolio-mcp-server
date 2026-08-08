@@ -278,7 +278,20 @@ Mcp-Session-Id: &lt;from initialize response&gt;
             + (isError ? "ERROR" : "OK")
             + "</p>";
         var renderer = RENDERERS[toolName] || renderDefault;
-        div.innerHTML = status + renderer(formEl, payload);
+        // FastMCP wraps list-returning tool results as
+        // ``structuredContent: {result: [...]}`` to disambiguate from a dict
+        // return (which is passed through as ``structuredContent: {…}``).
+        // Unwrap here so every renderer can read its data uniformly.
+        var normalized = unwrapFastMCP(payload);
+        div.innerHTML = status + renderer(formEl, normalized);
+    }
+
+    function unwrapFastMCP(payload) {
+        var sc = payload && payload.structuredContent;
+        if (sc && sc.result !== undefined && sc.result !== null) {
+            return Object.assign({}, payload, {structuredContent: sc.result});
+        }
+        return payload;
     }
 
     function escapeHtml(s) {

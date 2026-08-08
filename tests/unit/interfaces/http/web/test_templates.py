@@ -1037,3 +1037,18 @@ class TestMcpBrowserResultRenderers:
             "/mcp-ui renderer must NOT reference the phantom ``display_svg`` "
             "field — only ``data`` exists in the dataclass"
         )
+
+    def test_dispatcher_unwraps_fastmcp_result_envelope(self, web_client: object) -> None:
+        """FastMCP wraps list-returning tool results as ``structuredContent: {result: [...]}``;
+        the dispatcher must unwrap before invoking the renderer so per-tool renderers
+        can read their data uniformly. Without this, list_returning tools render empty.
+        """
+        text = web_client.get("/mcp-ui").text  # type: ignore[attr-defined]
+        assert "unwrapFastMCP" in text, (
+            "/mcp-ui dispatcher must unwrap FastMCP's {result: ...} envelope "
+            "before calling tool renderers"
+        )
+        assert "sc.result" in text, (
+            "unwrapFastMCP must check for the ``result`` key on structuredContent "
+            "(FastMCP wraps list returns as {structuredContent: {result: [...]}})"
+        )
