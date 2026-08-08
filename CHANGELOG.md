@@ -4,15 +4,42 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Known Issues
+- Docker image is 417 MB vs original 150 MB target (budget raised to 500 MB)
+
+## [0.1.1] — 2026-08-08 — MCP-UI & chat polish + manifest bake
+
+### Added
+- `portfolio-mcp-server` registered in `config/projects.manifest.yaml` as a third project; semantic DB pre-baked (`data/index.sqlite`, 466 chunks) for Fly.io deploy prep
+- Chat UI: inline trace pills surfacing agent tool calls as they stream
+- Chat UI: terminal-inspired visual design with typed error recovery
+- Chat: system prompt + reduced tool-call budget (5 → 3) + recursion headroom for stability
+
 ### Changed
 - README rewritten to reflect current 5-tools-working state (was the "greenfield" placeholder)
 - Architecture section updated to reflect LangChain single-file centralization
 - Removed backend/frontend/infra split in favor of hexagonal architecture documentation
+- Web UI fully translated to Spanish (templates + i18n override map)
 
-### Known Issues
-- `ask_portfolio` fails with `Function must have a docstring if description not provided` when composition is wired (LangChain + FastMCP integration bug)
-- `get_architecture_diagram` errors because the manifest references `docs/architecture.svg` files that don't exist
-- Docker image is 417 MB vs original 150 MB target (budget raised to 500 MB)
+### Removed
+- `/playground` browser surface removed — `/mcp-ui` is now the sole recruiter-facing MCP tool surface (-1181 lines)
+- Technology footer removed from all pages (recruiter-facing presentation)
+
+### Fixed
+- `ask_portfolio` no longer fails with `Function must have a docstring if description not provided` — LangChain adapter composition wired with sibling tools, tool registers and responds correctly (verified live with `mcp.client.streamable_http`)
+- `get_architecture_diagram` returns valid SVG data URL when the project has `docs/architecture.svg`; clean `"referenced file not found"` error otherwise (no 500)
+- `/mcp-ui` now unwraps the FastMCP `{result: ...}` envelope before dispatching to renderers (4 of 5 renderers were silently broken)
+- `/mcp-ui` now surfaces tool parameters via the FastMCP 3.4.6 `.parameters` attribute (was reading the renamed-away `.inputSchema`)
+- `/mcp-ui` `truncateSnippet` preserves chunk content (was slicing only first 2 lines, dropping everything for markdown-fenced snippets)
+- HTTP 429 from Gemini now translates to a recruiter-readable banner via `GeminiQuotaExceededError` (was opaque stacktrace)
+- Chat composer bottom-margin overflow + clear-history button
+- Chat history capped + user messages persist on send
+- Chat input clears on send (optimistic UI)
+- Chat stream skips empty `AIMessageChunk` content shapes and surfaces typed errors instead of silent failures
+
+### Verified
+- `pytest -q` → 736 passed, 12 skipped (docker daemon only), 0 failed
+- Live MCP session: 6 tools registered, `ask_portfolio` and `get_architecture_diagram` round-trip OK against `gemini-flash-latest`
 
 ## [2026-08-05] — LangChain centralization + bug fixes
 

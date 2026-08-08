@@ -15,7 +15,7 @@ schema_version: 1
 
 server:
   name: portfolio-mcp-server
-  version: 0.1.0
+  version: 0.1.1
   description: >
     MCP server exposing Harrison Rodriguez's portfolio as searchable tools.
     Indexes only the projects declared below; everything else is excluded
