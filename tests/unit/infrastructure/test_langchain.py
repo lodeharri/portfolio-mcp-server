@@ -88,6 +88,92 @@ async def test_agent_unwraps_tools_and_extracts_calls(monkeypatch: pytest.Monkey
     assert "presupuesto" in prompt.lower() or "tool" in prompt.lower()
 
 
+@pytest.mark.asyncio
+async def test_agent_run_translates_resource_exhausted_to_quota_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``LangChainAgentAdapter.run`` MUST surface
+    :class:`GeminiQuotaExceededError` (not the raw SDK
+    ``ResourceExhausted``) when the agent's LLM call hits HTTP 429.
+    Without this, ``ask_portfolio`` would propagate the raw SDK text
+    into the SSE stream and the recruiter would see a raw error.
+    """
+    from google.api_core.exceptions import ResourceExhausted
+
+    from mcp_server.domain.exceptions import (
+        GeminiQuotaExceededError,
+        GeminiTransientError,
+    )
+
+    class QuotaAgent:
+        async def ainvoke(self, payload: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
+            raise ResourceExhausted("quota", errors=[])
+
+    monkeypatch.setattr(
+        "mcp_server.infrastructure.langchain.create_react_agent",
+        lambda llm, tools, **kwargs: QuotaAgent(),
+    )
+
+    def tool_function() -> None:
+        return None
+
+    adapter = LangChainAgentAdapter(api_key="test", llm=object())
+
+    with pytest.raises(GeminiQuotaExceededError) as exc_info:
+        await adapter.run(
+            AgentRequest(question="Which project?", max_tool_calls=3),
+            [SimpleNamespace(fn=tool_function)],
+        )
+
+    assert not isinstance(exc_info.value, GeminiTransientError), (
+        "LangChainAgentAdapter.run must translate ResourceExhausted to GeminiQuotaExceededError"
+    )
+
+
+@pytest.mark.asyncio
+async def test_agent_stream_translates_resource_exhausted_to_quota_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``LangChainAgentAdapter.stream`` MUST also translate
+    :class:`ResourceExhausted` to :class:`GeminiQuotaExceededError`.
+    Recruiter demos go through ``stream`` (SSE), not ``run``, so this
+    is the higher-impact path.
+    """
+    from google.api_core.exceptions import ResourceExhausted
+
+    from mcp_server.domain.exceptions import GeminiQuotaExceededError
+
+    class QuotaAstreamIter:
+        def __aiter__(self) -> Any:
+            return self
+
+        async def __anext__(self) -> Any:
+            raise ResourceExhausted("quota", errors=[])
+
+    # LangGraph's ``astream`` is sync-returning-an-async-iter; mirror
+    # that shape so the test exercises the production code path.
+    class QuotaAgent:
+        def astream(self, payload: dict[str, Any], **kwargs: Any) -> QuotaAstreamIter:
+            return QuotaAstreamIter()
+
+    monkeypatch.setattr(
+        "mcp_server.infrastructure.langchain.create_react_agent",
+        lambda llm, tools, **kwargs: QuotaAgent(),
+    )
+
+    def tool_function() -> None:
+        return None
+
+    adapter = LangChainAgentAdapter(api_key="test", llm=object())
+
+    with pytest.raises(GeminiQuotaExceededError):
+        async for _chunk in adapter.stream(
+            AgentRequest(question="Which project?", max_tool_calls=3),
+            [SimpleNamespace(fn=tool_function)],
+        ):
+            pass
+
+
 # ---------------------------------------------------------------------------
 # LangChainEmbeddingAdapter — delegates to LangChain's embed_documents
 # ---------------------------------------------------------------------------
@@ -137,6 +223,39 @@ class TestLangChainEmbeddingAdapter:
 
         adapter = LangChainEmbeddingAdapter(api_key="dummy")
         assert isinstance(adapter, EmbeddingPort)
+
+    def test_resource_exhausted_raises_gemini_quota_exceeded_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """HTTP 429 ``RESOURCE_EXHAUSTED`` from the underlying LangChain
+        client MUST surface as ``GeminiQuotaExceededError`` (not
+        ``GeminiTransientError``) so the recruiter-facing wire message
+        tells them about the daily quota / midnight UTC recovery path.
+        """
+        from google.api_core.exceptions import ResourceExhausted
+
+        from mcp_server.domain.exceptions import (
+            GeminiQuotaExceededError,
+            GeminiTransientError,
+        )
+
+        class QuotaEmbeddings:
+            def embed_documents(self, texts: list[str]) -> list[list[float]]:
+                raise ResourceExhausted("quota", errors=[])
+
+        monkeypatch.setattr(
+            "mcp_server.infrastructure.langchain.GoogleGenerativeAIEmbeddings",
+            lambda **kwargs: QuotaEmbeddings(),
+        )
+
+        adapter = LangChainEmbeddingAdapter(api_key="dummy", embedding_dim=4)
+        with pytest.raises(GeminiQuotaExceededError) as exc_info:
+            adapter.embed(["alpha", "beta"])
+
+        assert not isinstance(exc_info.value, GeminiTransientError), (
+            "LangChainEmbeddingAdapter must translate ResourceExhausted to "
+            "GeminiQuotaExceededError (not the generic transient)"
+        )
 
 
 # ---------------------------------------------------------------------------

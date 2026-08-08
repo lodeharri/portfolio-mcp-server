@@ -112,9 +112,16 @@ Mcp-Session-Id: &lt;from initialize response&gt;
 
     function showError(formEl, message) {
         var div = formEl.parentNode.querySelector(".result");
-        div.innerHTML = '<pre style="color: var(--solar-red); background: var(--solar-base2); padding: 0.5rem; border-radius: 4px; overflow-x: auto; font-size: 0.85rem"><code>'
-            + escapeHtml(message)
-            + "</code></pre>";
+        // Friendly red banner matching the success-card layout. The
+        // raw <pre><code> dump previously made quota errors look like
+        // terminal output to recruiters; the new banner reuses the
+        // ``.mcp-result-card`` styling with the ``--error`` modifier
+        // (red border-left + red eyebrow text) so the error visually
+        // belongs to the same family as the success cards.
+        div.innerHTML = '<article class="mcp-result-card mcp-result-card--error" role="alert">'
+            + '<p class="mcp-result-card__path mcp-result-card__path--error">Error</p>'
+            + '<p class="mcp-result-summary">' + escapeHtml(message) + '</p>'
+            + '</article>';
     }
 
     function truncateSnippet(text, maxLen) {

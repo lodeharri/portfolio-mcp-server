@@ -139,44 +139,19 @@ class TestGeminiEmbeddingAdapterHappyPath:
 
 
 class TestRetryPolicyOn429:
-    """``429`` is retryable; full jitter backoff; succeeds within 3 attempts."""
+    """``429`` is non-retryable: it fail-fasts as
+    :class:`GeminiQuotaExceededError` (the daily / RPM quota is the
+    issue, and retrying within seconds doesn't help). Other transient
+    errors (5xx, network) still use the full retry budget.
+    """
 
-    def test_429_then_200_succeeds_and_sleeps_once(self, monkeypatch) -> None:
-        from mcp_server.infrastructure.adapters import gemini_embedding as ge
-
-        responses = [_RuntimeErrorFn(), _embed_response([0.0] * 768)]
-        fake_client = _build_fake_client(responses)
-        monkeypatch.setattr(ge, "_build_genai_client", lambda api_key: fake_client)
-
-        sleeps: list[float] = []
-        monkeypatch.setattr(ge.time, "sleep", lambda s: sleeps.append(s))
-
-        # 429 must raise the retried error so the adapter can detect it;
-        # use a fake SDK exception type that mirrors ``google.api_core``'s
-        # ``ResourceExhausted`` (status 429).
-        call_count = {"n": 0}
-
-        def _embed_content(**_kwargs: Any) -> Any:
-            call_count["n"] += 1
-            if call_count["n"] == 1:
-                fake = MagicMock()
-                fake.status_code = 429
-                fake.message = "rate limit"
-                raise type("RateLimit", (Exception,), {"status_code": 429})("rate")
-            return _embed_response([0.0] * 768)
-
-        fake_client.models.embed_content = MagicMock(side_effect=_embed_content)
-        monkeypatch.setattr(ge.random, "uniform", lambda _a, _b: 0.3)
-
-        adapter = ge.GeminiEmbeddingAdapter(api_key="dummy")
-        result = adapter.embed(["hi"])
-        assert len(result) == 1
-        # One sleep between the first (failing) call and the second (successful)
-        assert len(sleeps) == 1
-        assert sleeps[0] == 0.3  # matches our stubbed jitter
-
-    def test_429_three_times_raises_transient_error(self, monkeypatch) -> None:
-        from mcp_server.domain.exceptions import GeminiTransientError
+    def test_429_fails_fast_with_quota_error_no_retry(self, monkeypatch) -> None:
+        """429 is non-retryable; the adapter MUST fail fast on the first
+        429 with :class:`GeminiQuotaExceededError` (not the generic
+        ``GeminiTransientError``) so the user sees the actionable
+        "midnight UTC" message.
+        """
+        from mcp_server.domain.exceptions import GeminiQuotaExceededError
         from mcp_server.infrastructure.adapters import gemini_embedding as ge
 
         def _always_429(**_kwargs: Any) -> Any:
@@ -190,10 +165,10 @@ class TestRetryPolicyOn429:
         monkeypatch.setattr(ge.time, "sleep", lambda _s: None)
 
         adapter = ge.GeminiEmbeddingAdapter(api_key="dummy")
-        with pytest.raises(GeminiTransientError):
+        with pytest.raises(GeminiQuotaExceededError):
             adapter.embed(["hi"])
-        # 3 attempts total — 2 sleeps.
-        assert fake_client.models.embed_content.call_count == 3
+        # 1 attempt — fail-fast on 429, no retries.
+        assert fake_client.models.embed_content.call_count == 1
 
     def test_5xx_raises_transient_error_without_retry_after_three_attempts(
         self, monkeypatch
@@ -216,6 +191,81 @@ class TestRetryPolicyOn429:
             adapter.embed(["hi"])
         # 3 attempts total.
         assert fake_client.models.embed_content.call_count == 3
+
+
+class TestQuotaExceededError:
+    """HTTP 429 ``RESOURCE_EXHAUSTED`` from the SDK MUST surface as
+    :class:`GeminiQuotaExceededError` — distinct from
+    :class:`GeminiTransientError` so the recruiter sees the actionable
+    "midnight UTC" message, not the generic "service temporarily
+    unavailable, retry later".
+    """
+
+    def test_resource_exhausted_raises_quota_exceeded_error_not_transient(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from google.api_core.exceptions import ResourceExhausted
+
+        from mcp_server.domain.exceptions import (
+            GeminiQuotaExceededError,
+            GeminiTransientError,
+        )
+        from mcp_server.infrastructure.adapters import gemini_embedding as ge
+
+        def _quota(**_kwargs: Any) -> Any:
+            raise ResourceExhausted(
+                "You exceeded your current quota",
+                errors=[],
+            )
+
+        fake_client = MagicMock()
+        fake_client.models.embed_content = MagicMock(side_effect=_quota)
+        monkeypatch.setattr(ge, "_build_genai_client", lambda api_key: fake_client)
+        monkeypatch.setattr(ge.time, "sleep", lambda _s: None)
+
+        adapter = ge.GeminiEmbeddingAdapter(api_key="dummy")
+        with pytest.raises(GeminiQuotaExceededError) as exc_info:
+            adapter.embed(["hi"])
+
+        # Critical contract: NOT a GeminiTransientError. If this fails,
+        # the mapper would surface the vague "retry later" message and
+        # the recruiter would think it's a transient outage when it's
+        # actually a daily quota hit.
+        assert not isinstance(exc_info.value, GeminiTransientError), (
+            "GeminiQuotaExceededError must be a sibling of GeminiTransientError, "
+            "not a subclass — the mapper relies on this for the right message"
+        )
+        # Fail-fast on quota: 1 attempt, no retries (retries within
+        # seconds don't help daily / RPM quota exhaustion).
+        assert fake_client.models.embed_content.call_count == 1
+
+    def test_resource_exhausted_message_preserves_sdk_detail(self, monkeypatch) -> None:
+        """The wrapped error MUST carry the underlying SDK message so
+        debugging the audit log is possible (the recruiter-facing wire
+        message is rewritten by ``translate_tool_error``).
+        """
+        from google.api_core.exceptions import ResourceExhausted
+
+        from mcp_server.domain.exceptions import GeminiQuotaExceededError
+        from mcp_server.infrastructure.adapters import gemini_embedding as ge
+
+        def _quota(**_kwargs: Any) -> Any:
+            raise ResourceExhausted(
+                "You exceeded your current quota, check your plan",
+                errors=[],
+            )
+
+        fake_client = MagicMock()
+        fake_client.models.embed_content = MagicMock(side_effect=_quota)
+        monkeypatch.setattr(ge, "_build_genai_client", lambda api_key: fake_client)
+        monkeypatch.setattr(ge.time, "sleep", lambda _s: None)
+
+        adapter = ge.GeminiEmbeddingAdapter(api_key="dummy")
+        with pytest.raises(GeminiQuotaExceededError) as exc_info:
+            adapter.embed(["hi"])
+        # SDK detail is preserved via ``__cause__`` (raise from exc).
+        assert exc_info.value.__cause__ is not None
+        assert "quota" in str(exc_info.value.__cause__)
 
 
 # ---------------------------------------------------------------------------

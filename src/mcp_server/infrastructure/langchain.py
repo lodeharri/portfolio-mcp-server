@@ -30,6 +30,38 @@ from langgraph.prebuilt import create_react_agent
 
 from mcp_server.application.ports.agent import AgentChunk, AgentRequest, AgentResponse
 from mcp_server.application.ports.chunking import Chunk
+from mcp_server.domain.exceptions import GeminiQuotaExceededError
+
+try:
+    # ``google-genai`` (the SDK LangChain wraps) raises ``ResourceExhausted``
+    # on HTTP 429. The class is importable from ``google.api_core`` which
+    # is a transitive dep of ``google-genai``.
+    from google.api_core.exceptions import ResourceExhausted
+except ImportError:  # pragma: no cover — defensive: package always present in prod
+    ResourceExhausted = None  # type: ignore[assignment,misc]
+
+from langchain_google_genai._common import GoogleGenerativeAIError
+
+
+def _is_gemini_quota_error(exc: BaseException) -> bool:
+    """Detect a Gemini HTTP 429 quota error regardless of exception type.
+
+    The raw ``google-genai`` SDK raises ``google.api_core.exceptions.ResourceExhausted``
+    (with ``status_code=429``) so the type-based check is sufficient there.
+    LangChain's ``GoogleGenerativeAIEmbeddings`` / ``ChatGoogleGenerativeAI``,
+    however, wrap that into their own ``GoogleGenerativeAIError`` which does
+    NOT expose ``status_code`` or any structured accessor — only the string
+    message. We fall back to a substring match on ``RESOURCE_EXHAUSTED`` /
+    ``429`` to cover the LangChain path. The substring is brittle but it's
+    the only signal the LangChain wrapper exposes; if LangChain ever
+    adds a structured accessor, replace the substring check.
+    """
+    if ResourceExhausted is not None and isinstance(exc, ResourceExhausted):
+        return True
+    if isinstance(exc, GoogleGenerativeAIError):
+        msg = str(exc).upper()
+        return "RESOURCE_EXHAUSTED" in msg or " 429 " in msg
+    return False
 
 DEFAULT_AGENT_SYSTEM_PROMPT = (
     "Eres un asistente técnico que responde preguntas sobre los proyectos "
@@ -194,10 +226,17 @@ class LangChainAgentAdapter:
         tool_functions = [getattr(tool, "fn", tool) for tool in tools]
         agent = create_react_agent(self._llm, tool_functions, prompt=self._state_modifier)
         messages = [*(request.history or []), {"role": "user", "content": request.question}]
-        result = await agent.ainvoke(
-            {"messages": messages},
-            config={"recursion_limit": request.max_tool_calls * 3 + 1},
-        )
+        try:
+            result = await agent.ainvoke(
+                {"messages": messages},
+                config={"recursion_limit": request.max_tool_calls * 3 + 1},
+            )
+        except Exception as exc:
+            if _is_gemini_quota_error(exc):
+                raise GeminiQuotaExceededError(
+                    f"Gemini API quota exceeded (HTTP 429): {exc}"
+                ) from exc
+            raise
         result_messages = result["messages"]
         tool_calls = [
             tool_call
@@ -240,56 +279,71 @@ class LangChainAgentAdapter:
         tool_functions = [getattr(tool, "fn", tool) for tool in tools]
         agent = create_react_agent(self._llm, tool_functions, prompt=self._state_modifier)
         messages = [*(request.history or []), {"role": "user", "content": request.question}]
-        async for message, _meta in agent.astream(
-            {"messages": messages},
-            config={"recursion_limit": request.max_tool_calls * 3 + 1},
-            stream_mode="messages",
-        ):
-            if not isinstance(message, AIMessageChunk):
-                continue
-
-            # Tool-call surfacing: emit one ``tool_call`` chunk per entry in
-            # ``message.tool_calls`` BEFORE we attempt to tokenize the chunk's
-            # content. The order matters — the UI renders the trace pills
-            # above the assistant body, so the structured signal has to
-            # arrive first to match the model's intent ("I want to call X,
-            # then say something about it").
-            raw_tool_calls = getattr(message, "tool_calls", None) or []
-            for raw_tool_call in raw_tool_calls:
-                tool_payload = _extract_tool_call_payload(raw_tool_call)
-                if tool_payload is None:
+        try:
+            aiter = agent.astream(
+                {"messages": messages},
+                config={"recursion_limit": request.max_tool_calls * 3 + 1},
+                stream_mode="messages",
+            )
+        except Exception as exc:
+            if _is_gemini_quota_error(exc):
+                raise GeminiQuotaExceededError(
+                    f"Gemini API quota exceeded (HTTP 429): {exc}"
+                ) from exc
+            raise
+        try:
+            async for message, _meta in aiter:
+                if not isinstance(message, AIMessageChunk):
                     continue
-                yield AgentChunk(kind="tool_call", data=tool_payload)
 
-            content = message.content
-            if content is None:
-                continue
-            if isinstance(content, (str, list, tuple, dict)) and len(content) == 0:
-                continue
-            if isinstance(content, str) and not content.strip():
-                continue
+                # Tool-call surfacing: emit one ``tool_call`` chunk per entry in
+                # ``message.tool_calls`` BEFORE we attempt to tokenize the chunk's
+                # content. The order matters — the UI renders the trace pills
+                # above the assistant body, so the structured signal has to
+                # arrive first to match the model's intent ("I want to call X,
+                # then say something about it").
+                raw_tool_calls = getattr(message, "tool_calls", None) or []
+                for raw_tool_call in raw_tool_calls:
+                    tool_payload = _extract_tool_call_payload(raw_tool_call)
+                    if tool_payload is None:
+                        continue
+                    yield AgentChunk(kind="tool_call", data=tool_payload)
 
-            if isinstance(content, (list, tuple)):
-                text_parts: list[str] = []
-                for block in content:
-                    if isinstance(block, str):
-                        text_parts.append(block)
-                    elif isinstance(block, dict) and block.get("type") == "text":
-                        text = block.get("text")
-                        if isinstance(text, str):
-                            text_parts.append(text)
-                token = "".join(text_parts)
-                if not token.strip():
+                content = message.content
+                if content is None:
                     continue
-            elif isinstance(content, dict):
-                text = content.get("text") if content.get("type") == "text" else None
-                if not isinstance(text, str) or not text.strip():
+                if isinstance(content, (str, list, tuple, dict)) and len(content) == 0:
                     continue
-                token = text
-            else:
-                token = str(content)
+                if isinstance(content, str) and not content.strip():
+                    continue
 
-            yield AgentChunk(kind="token", data=token)
+                if isinstance(content, (list, tuple)):
+                    text_parts: list[str] = []
+                    for block in content:
+                        if isinstance(block, str):
+                            text_parts.append(block)
+                        elif isinstance(block, dict) and block.get("type") == "text":
+                            text = block.get("text")
+                            if isinstance(text, str):
+                                text_parts.append(text)
+                    token = "".join(text_parts)
+                    if not token.strip():
+                        continue
+                elif isinstance(content, dict):
+                    text = content.get("text") if content.get("type") == "text" else None
+                    if not isinstance(text, str) or not text.strip():
+                        continue
+                    token = text
+                else:
+                    token = str(content)
+
+                yield AgentChunk(kind="token", data=token)
+        except Exception as exc:
+            if _is_gemini_quota_error(exc):
+                raise GeminiQuotaExceededError(
+                    f"Gemini API quota exceeded (HTTP 429): {exc}"
+                ) from exc
+            raise
         yield AgentChunk(kind="done", data="")
 
 
@@ -349,8 +403,23 @@ class LangChainEmbeddingAdapter:
         One round-trip per call (LangChain batches up to 100 texts
         internally). Order is preserved: ``result[i]`` corresponds to
         ``texts[i]``.
+
+        Raises:
+            GeminiQuotaExceededError: on HTTP 429 ``RESOURCE_EXHAUSTED``
+                (daily / RPM quota exhausted). Translated from the
+                underlying ``google.api_core.exceptions.ResourceExhausted``
+                so the recruiter-facing message tells them to wait
+                until midnight UTC / upgrade / switch keys — NOT the
+                generic "service temporarily unavailable".
         """
-        return self._embeddings.embed_documents(texts)
+        try:
+            return self._embeddings.embed_documents(texts)
+        except Exception as exc:
+            if _is_gemini_quota_error(exc):
+                raise GeminiQuotaExceededError(
+                    f"Gemini API quota exceeded (HTTP 429): {exc}"
+                ) from exc
+            raise
 
 
 class _MockLangChainEmbeddingAdapter:

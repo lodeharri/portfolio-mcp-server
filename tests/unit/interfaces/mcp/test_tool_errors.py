@@ -33,6 +33,7 @@ from mcp_server.domain.exceptions import (
     DomainError,
     EmbeddingDimensionMismatchError,
     GeminiPermanentError,
+    GeminiQuotaExceededError,
     GeminiTransientError,
     ManifestProjectNotFoundError,
     McpServerError,
@@ -102,6 +103,63 @@ class TestMappedDomainErrors:
         # The raw "invalid api key" phrase MUST NOT leak.
         assert "invalid api key" not in str(result).lower()
         assert "rejected" in str(result).lower()
+
+    def test_gemini_quota_exceeded_error_is_authored(self) -> None:
+        """``GeminiQuotaExceededError`` MUST map to a quota-specific
+        message — distinct from ``GeminiTransientError`` so the
+        recruiter sees actionable hints (midnight UTC, upgrade, switch
+        keys), not the vague "retry later".
+        """
+        from mcp_server.interfaces.mcp.tool_errors import translate_tool_error
+
+        exc = GeminiQuotaExceededError("429 RESOURCE_EXHAUSTED")
+        result = translate_tool_error(exc)
+
+        assert isinstance(result, ToolError)
+        # Discriminator match — same convention as other rows in
+        # ``tool_errors.py:21-23`` ("substring identifies the error class").
+        assert "quota exceeded" in str(result).lower(), (
+            "the quota-exceeded message MUST contain the substring "
+            "'quota exceeded' so the message-based discriminator works"
+        )
+        # Actionable hints — the message MUST tell the user what to do.
+        assert "midnight utc" in str(result).lower(), (
+            "the quota-exceeded message MUST mention 'midnight UTC' as "
+            "the actionable recovery path (free tier resets daily)"
+        )
+        assert "upgrade" in str(result).lower(), (
+            "the quota-exceeded message MUST mention 'upgrade' as the "
+            "alternative path (paid tier / new API key)"
+        )
+        # The raw SDK fragments MUST NOT leak.
+        assert "RESOURCE_EXHAUSTED" not in str(result), (
+            "the raw SDK exception class name MUST NOT appear in the recruiter-facing wire message"
+        )
+        assert "429" not in str(result), (
+            "the literal HTTP status code MUST NOT appear (it's "
+            "developer jargon — recruiters don't read status codes)"
+        )
+
+    def test_gemini_quota_exceeded_takes_precedence_over_transient(self) -> None:
+        """Subclass precedence: ``GeminiQuotaExceededError`` is a
+        sibling of ``GeminiTransientError`` (NOT a subclass), but the
+        translator still MUST check it first to give the right message.
+        If the translator checks ``GeminiTransientError`` first, the
+        recruiter would get "service temporarily unavailable" instead
+        of the actionable quota message.
+        """
+        from mcp_server.interfaces.mcp.tool_errors import translate_tool_error
+
+        result = translate_tool_error(GeminiQuotaExceededError("quota"))
+        assert "quota exceeded" in str(result).lower(), (
+            "GeminiQuotaExceededError MUST be checked before GeminiTransientError "
+            "in the translator — even though isinstance(quota, transient) is False "
+            "by sibling design, an inverted check order would misroute this error"
+        )
+        assert "temporarily" not in str(result).lower(), (
+            "the transient fallback MUST NOT match first — that would "
+            "leak the wrong message for the most visible error path"
+        )
 
     def test_embedding_dimension_mismatch_is_authored(self) -> None:
         from mcp_server.interfaces.mcp.tool_errors import translate_tool_error
@@ -212,9 +270,7 @@ class TestExceptionHierarchy:
         not the generic domain default."""
         from mcp_server.interfaces.mcp.tool_errors import translate_tool_error
 
-        result = translate_tool_error(
-            ManifestProjectNotFoundError("project 'bar' not declared")
-        )
+        result = translate_tool_error(ManifestProjectNotFoundError("project 'bar' not declared"))
         # The specific mapping echoes the project id; the generic
         # domain default would say "internal error".
         assert "bar" in str(result)

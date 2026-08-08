@@ -46,7 +46,11 @@ from typing import Final, Protocol
 from google import genai
 from google.genai import types
 
-from mcp_server.domain.exceptions import GeminiPermanentError, GeminiTransientError
+from mcp_server.domain.exceptions import (
+    GeminiPermanentError,
+    GeminiQuotaExceededError,
+    GeminiTransientError,
+)
 
 __all__ = [
     "BASE_DELAY",
@@ -195,6 +199,14 @@ class GeminiEmbeddingAdapter:
                 raise  # propagates without retry
             except Exception as exc:
                 status = _status_from_exception(exc)
+                if status == 429:
+                    # Daily quota exhausted — distinct from transient
+                    # network/5xx errors. The recovery path is different
+                    # (wait until midnight UTC, switch keys, or upgrade)
+                    # so the domain layer surfaces a dedicated message.
+                    raise GeminiQuotaExceededError(
+                        f"Gemini API quota exceeded (HTTP 429): {exc}"
+                    ) from exc
                 if status is not None and 400 <= status < 500 and status != 429:
                     # Fail fast on 4xx (except 429 which is retryable).
                     raise GeminiPermanentError(

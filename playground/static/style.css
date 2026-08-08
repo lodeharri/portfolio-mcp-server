@@ -811,6 +811,14 @@ section.playground-chat {
     padding: 0.625rem 0.75rem;
 }
 
+.mcp-result-card--error {
+    border-left-color: var(--solar-red);
+}
+
+.mcp-result-card__path--error {
+    color: var(--solar-red);
+}
+
 .mcp-result-card__path {
     color: var(--solar-violet);
     font-family: inherit;

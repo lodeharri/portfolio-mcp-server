@@ -19,6 +19,7 @@ Hierarchy
     │   ├── PreindexError
     │   ├── GeminiError
     │   │   ├── GeminiTransientError
+    │   │   ├── GeminiQuotaExceededError
     │   │   └── GeminiPermanentError
     │   └── VectorStoreError
     │       ├── EmbeddingDimensionMismatchError
@@ -54,6 +55,7 @@ __all__ = [
     "EmbeddingDimensionMismatchError",
     "GeminiError",
     "GeminiPermanentError",
+    "GeminiQuotaExceededError",
     "GeminiTransientError",
     "GitleaksBinaryMissingError",
     "ManifestError",
@@ -195,8 +197,8 @@ class GeminiError(DomainError):
     """Base class for any Gemini SDK failure.
 
     The retry-aware subclasses (:class:`GeminiTransientError`,
-    :class:`GeminiPermanentError`) implement ADR-003's
-    fail-fast / backoff policy:
+    :class:`GeminiPermanentError`, :class:`GeminiQuotaExceededError`)
+    implement ADR-003's fail-fast / backoff policy:
 
     * 429 / 5xx / connection / timeout → :class:`GeminiTransientError`
     * 4xx (≠ 429) → :class:`GeminiPermanentError`
@@ -210,6 +212,19 @@ class GeminiTransientError(GeminiError):
     full-jitter exponential backoff (base 1s, max 30s). After 3
     attempts the use case re-raises this as :class:`PreindexError`
     with ``exit_code=GEMINI_ERROR`` so the CLI exits with code 4.
+    """
+
+
+class GeminiQuotaExceededError(GeminiError):
+    """Gemini API quota exhausted (HTTP 429 RESOURCE_EXHAUSTED).
+
+    Distinct from :class:`GeminiTransientError` because the recovery path
+    is different: transient errors retry within seconds; quota errors
+    require waiting until midnight UTC, switching API keys, or
+    upgrading to a paid tier. The message surfaced to the client must
+    make this distinction explicit — telling a recruiter "service
+    temporarily unavailable" when the real issue is a daily quota
+    hit is misleading.
     """
 
 

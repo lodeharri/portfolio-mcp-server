@@ -108,6 +108,82 @@ class TestGeminiExceptionHierarchy:
             raise GeminiTransientError("rate limit exceeded")
 
 
+class TestGeminiQuotaExceededError:
+    """``GeminiQuotaExceededError`` is a sibling of ``GeminiTransientError``.
+
+    HTTP 429 ``RESOURCE_EXHAUSTED`` from the Gemini SDK is semantically
+    distinct from a transient network blip: retries within seconds do
+    NOT clear it — the user must wait until midnight UTC, switch API
+    keys, or upgrade to a paid tier. The recovery path differs, so the
+    class hierarchy reflects it: ``GeminiQuotaExceededError`` extends
+    ``GeminiError`` directly (sibling), NOT ``GeminiTransientError``
+    (subclass). This matters for the
+    :func:`translate_tool_error` mapper — the check MUST come BEFORE
+    the generic transient check to surface the actionable "midnight UTC"
+    message.
+    """
+
+    def test_gemini_quota_exceeded_error_inherits_from_gemini_error(self) -> None:
+        from mcp_server.domain.exceptions import GeminiError, GeminiQuotaExceededError
+
+        assert issubclass(GeminiQuotaExceededError, GeminiError)
+
+    def test_gemini_quota_exceeded_error_is_sibling_not_subclass_of_transient(
+        self,
+    ) -> None:
+        """Quota is NOT a kind of transient — distinct recovery path."""
+        from mcp_server.domain.exceptions import (
+            GeminiQuotaExceededError,
+            GeminiTransientError,
+        )
+
+        assert not issubclass(GeminiQuotaExceededError, GeminiTransientError), (
+            "GeminiQuotaExceededError must be a SIBLING of GeminiTransientError "
+            "(both extend GeminiError), not a subclass — they have different "
+            "recovery paths (retry-within-seconds vs wait-until-midnight-UTC)"
+        )
+
+    def test_gemini_quota_exceeded_error_instance_is_a_gemini_error(self) -> None:
+        from mcp_server.domain.exceptions import GeminiError, GeminiQuotaExceededError
+
+        exc = GeminiQuotaExceededError("quota exceeded")
+        assert isinstance(exc, GeminiError)
+
+    def test_gemini_quota_exceeded_error_instance_is_not_a_transient(self) -> None:
+        """``isinstance`` returns False because of the sibling hierarchy."""
+        from mcp_server.domain.exceptions import (
+            GeminiQuotaExceededError,
+            GeminiTransientError,
+        )
+
+        exc = GeminiQuotaExceededError("quota exceeded")
+        assert not isinstance(exc, GeminiTransientError), (
+            "a GeminiQuotaExceededError instance must NOT isinstance-check "
+            "as GeminiTransientError — the mapper relies on this for the "
+            "correct authoritative message"
+        )
+
+    def test_gemini_quota_exceeded_error_inherits_from_domain_error(self) -> None:
+        """Domain catch-all in :func:`translate_tool_error` requires this."""
+        from mcp_server.domain.exceptions import (
+            DomainError,
+            GeminiQuotaExceededError,
+        )
+
+        assert issubclass(GeminiQuotaExceededError, DomainError)
+
+    def test_gemini_quota_exceeded_error_can_be_raised(self) -> None:
+        from mcp_server.domain.exceptions import GeminiQuotaExceededError
+
+        with pytest.raises(GeminiQuotaExceededError, match="quota"):
+            raise GeminiQuotaExceededError("daily quota hit")
+
+    def test_gemini_quota_exceeded_error_is_in_all(self) -> None:
+        from mcp_server.domain import exceptions as exc_module
+
+        assert "GeminiQuotaExceededError" in exc_module.__all__
+
+
 class TestVectorStoreExceptionHierarchy:
     """``VectorStoreError`` and friends cover all DB failures."""
 

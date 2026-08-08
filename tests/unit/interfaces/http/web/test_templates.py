@@ -399,9 +399,7 @@ class TestIndexPageSpanishTranslation:
         tool surface.
         """
         text = web_client.get("/").text  # type: ignore[attr-defined]
-        assert "Explorador MCP" in text, (
-            "the primary CTA must read 'Explorador MCP' (Spanish)"
-        )
+        assert "Explorador MCP" in text, "the primary CTA must read 'Explorador MCP' (Spanish)"
         assert "Probar el playground MCP" not in text, (
             "the legacy 'Probar el playground MCP' CTA must be removed"
         )
@@ -1051,4 +1049,81 @@ class TestMcpBrowserResultRenderers:
         assert "sc.result" in text, (
             "unwrapFastMCP must check for the ``result`` key on structuredContent "
             "(FastMCP wraps list returns as {structuredContent: {result: [...]}})"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Task 5 — friendly error banner in showError (vs raw <pre><code>)
+# ---------------------------------------------------------------------------
+
+
+class TestMcpBrowserErrorBanner:
+    """When a tool call fails (Gemini quota hit, validation, etc.), the
+    inline ``showError(formEl, message)`` MUST render a friendly red
+    banner using the ``.mcp-result-card`` styling family — NOT a raw
+    ``<pre><code>`` block. The raw block is what made the quota error
+    look like terminal output to recruiters.
+    """
+
+    def test_rendered_html_contains_mcp_error_banner_class(self, web_client: object) -> None:
+        """The inline JS MUST reference the new ``mcp-error-banner``
+        (or equivalent) class on the showError path.
+        """
+        text = web_client.get("/mcp-ui").text  # type: ignore[attr-defined]
+        # Either the inline script tags the showError result with the
+        # ``mcp-error-banner`` class directly OR it builds the new
+        # ``.mcp-result-card--error`` variant — both are acceptable
+        # forms of the friendly banner. We assert on the JS-side
+        # ``--error`` modifier which is the production choice.
+        assert "mcp-result-card--error" in text, (
+            "/mcp-ui showError path must use the .mcp-result-card--error "
+            "modifier so the error visually matches the success cards "
+            "and uses the red accent (Solarized --solar-red)"
+        )
+
+    def test_show_error_no_longer_renders_pre_code_only(self, web_client: object) -> None:
+        """The showError function must NOT emit a bare ``<pre><code>``
+        error block. It MAY still appear in renderDefault's fallback,
+        but NOT as the ONLY error path. We assert the showError body
+        builds an ``<article>`` element (the .mcp-result-card root).
+        """
+        text = web_client.get("/mcp-ui").text  # type: ignore[attr-defined]
+        # Extract the showError function body.
+        m = re.search(
+            r"function\s+showError\s*\([^)]*\)\s*\{(.*?)\n\s{4}\}",
+            text,
+            re.DOTALL,
+        )
+        assert m, "/mcp-ui inline JS must define a showError function with a body"
+        body = m.group(1)
+        # showError MUST build an <article> (the .mcp-result-card root).
+        assert "<article" in body, (
+            "showError must render an <article class='mcp-result-card--error'> "
+            "banner instead of the raw <pre><code> dump"
+        )
+
+    def test_css_defines_error_modifier_with_solar_red_accent(self) -> None:
+        """``playground/static/style.css`` MUST declare the
+        ``.mcp-result-card--error`` modifier and tie it to the
+        ``--solar-red`` token — so the error banner visually matches
+        the recruiter-facing palette.
+        """
+        css_path = PLAYGROUND_STATIC_DIR / "style.css"
+        css = css_path.read_text(encoding="utf-8")
+        rule_match = re.search(
+            r"\.mcp-result-card--error\s*\{([^}]*)\}",
+            css,
+            flags=re.DOTALL,
+        )
+        assert rule_match, (
+            "style.css must define a .mcp-result-card--error modifier for the friendly error banner"
+        )
+        body = rule_match.group(1).strip()
+        assert body, (
+            "style.css's .mcp-result-card--error rule is empty — "
+            "the visual accent (red border) is the contract"
+        )
+        assert "var(--solar-red)" in body, (
+            ".mcp-result-card--error must reference var(--solar-red) "
+            "to honor the locked Solarized Phosphor palette"
         )

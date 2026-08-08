@@ -32,7 +32,11 @@ from typing import Final, Protocol
 from google import genai
 from google.genai import types
 
-from mcp_server.domain.exceptions import GeminiPermanentError, GeminiTransientError
+from mcp_server.domain.exceptions import (
+    GeminiPermanentError,
+    GeminiQuotaExceededError,
+    GeminiTransientError,
+)
 
 __all__ = [
     "BASE_DELAY",
@@ -126,10 +130,7 @@ class GeminiLlmAdapter:
 
     def summarize(self, text: str, max_tokens: int = 500) -> str:
         """Compress ``text`` via a single-shot prompt with retry policy."""
-        prompt = (
-            f"Summarize the following text in at most {max_tokens} tokens:\n\n"
-            f"{text}"
-        )
+        prompt = f"Summarize the following text in at most {max_tokens} tokens:\n\n{text}"
         return self._generate_with_retry(contents=prompt)
 
     def chat(
@@ -178,6 +179,14 @@ class GeminiLlmAdapter:
                 raise
             except Exception as exc:
                 status = _status_from_exception(exc)
+                if status == 429:
+                    # Daily quota exhausted — distinct from transient
+                    # network/5xx errors. Recovery path differs
+                    # (midnight UTC, switch keys, upgrade), so we raise
+                    # a dedicated domain error.
+                    raise GeminiQuotaExceededError(
+                        f"Gemini API quota exceeded (HTTP 429): {exc}"
+                    ) from exc
                 if status is not None and 400 <= status < 500 and status != 429:
                     raise GeminiPermanentError(
                         f"gemini chat failed with status {status}: {exc}"

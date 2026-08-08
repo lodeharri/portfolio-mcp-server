@@ -42,6 +42,11 @@ FileNotFoundError                 ``referenced file not found`` (raw path
                                         is OSError text — never echoed)
 GeminiTransientError              ``service temporarily unavailable, retry
                                         later``
+GeminiQuotaExceededError          ``AI service quota exceeded. The free
+                                        tier daily limit has been reached.
+                                        Try again after midnight UTC, or
+                                        upgrade your plan, or use a
+                                        different API key.``
 GeminiPermanentError              ``service rejected the request``
 EmbeddingDimensionMismatchError   ``index dim mismatch — rebuild index``
 DomainError (catch-all)           ``internal error``
@@ -72,6 +77,7 @@ from mcp_server.domain.exceptions import (
     DomainError,
     EmbeddingDimensionMismatchError,
     GeminiPermanentError,
+    GeminiQuotaExceededError,
     GeminiTransientError,
     ManifestProjectNotFoundError,
     McpServerError,
@@ -131,6 +137,18 @@ def translate_tool_error(exc: BaseException) -> ToolError:
         # ADR/README/SVG missing on disk. Path is OSError text — never
         # echo it (it leaks filesystem structure).
         return ToolError("referenced file not found")
+
+    if isinstance(exc, GeminiQuotaExceededError):
+        # Distinct from GeminiTransientError: quota errors do NOT
+        # succeed by retrying — the user must wait, switch keys,
+        # or upgrade. The message MUST signal this so the recruiter
+        # demo isn't confused with a transient outage. Checked
+        # BEFORE GeminiTransientError so the sibling branch wins.
+        return ToolError(
+            "AI service quota exceeded. The free tier daily limit has "
+            "been reached. Try again after midnight UTC, or upgrade your "
+            "plan at https://ai.google.dev/pricing, or use a different API key."
+        )
 
     if isinstance(exc, GeminiTransientError):
         # Authored message: no raw "429" or SDK text reaches the client.
